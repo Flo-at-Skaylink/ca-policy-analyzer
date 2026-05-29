@@ -797,7 +797,7 @@ function checkUserAgentBypass(
           recommendation:
             "Change the platform condition to target \"All platforms\" instead of specific platforms, or " +
             "create a companion policy that blocks access from unknown/unsupported device platforms " +
-            "(CIS 5.3.11). This eliminates the user-agent spoofing bypass path.",
+            "(supplementary CA hardening). This eliminates the user-agent spoofing bypass path.",
         });
       }
     }
@@ -2258,7 +2258,7 @@ function checkTenantWideGaps(context: TenantContext): Finding[] {
         "unrecognized user-agent to bypass MFA entirely.",
       recommendation:
         "Either change all MFA policies to target 'All platforms' (recommended), or create a " +
-        "companion policy that blocks access from unknown/unsupported device platforms per CIS 5.3.11. " +
+        "companion policy that blocks access from unknown/unsupported device platforms (supplementary CA hardening). " +
         "This closes the user-agent spoofing bypass path that MFASweep exploits.",
     });
   }

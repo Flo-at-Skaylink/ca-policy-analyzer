@@ -452,17 +452,36 @@ export function CISView({ result }: CISViewProps) {
   const [statusFilter, setStatusFilter] = useState<CISStatus | "all">("all");
   const [levelFilter, setLevelFilter] = useState<CISLevel | "all">("all");
 
-  const filtered = result.controls.filter((c) => {
+  // Sort controls by their CIS id numerically (so 5.2.2.2 < 5.2.2.10) and keep
+  // supplementary controls (5.3.x / 5.4.x ids) grouped after the §5.2.2 set.
+  const compareCisId = (a: string, b: string) => {
+    const pa = a.split(".").map((n) => parseInt(n, 10));
+    const pb = b.split(".").map((n) => parseInt(n, 10));
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const x = pa[i] ?? 0;
+      const y = pb[i] ?? 0;
+      if (x !== y) return x - y;
+    }
+    return 0;
+  };
+  const sortedControls = [...result.controls].sort((a, b) =>
+    compareCisId(a.control.id, b.control.id)
+  );
+
+  const filtered = sortedControls.filter((c) => {
     if (statusFilter !== "all" && c.result.status !== statusFilter) return false;
     if (levelFilter !== "all" && c.control.level !== levelFilter) return false;
     return true;
   });
 
-  // Group by section
-  const sections = [...new Set(result.controls.map((c) => c.control.section))];
+  // Group by section (order follows the sorted control order)
+  const sections = [...new Set(sortedControls.map((c) => c.control.section))];
 
-  const l1Controls = result.controls.filter((c) => c.control.level === "L1" && c.result.status !== "not-applicable");
-  const l2Controls = result.controls.filter((c) => c.control.level === "L2" && c.result.status !== "not-applicable");
+  // L1/L2 breakdown reflects only the official CIS v7 §5.2.2 + §1.3.2 scope,
+  // excluding supplementary CA hardening controls.
+  const officialControls = sortedControls.filter((c) => !c.control.supplementary);
+  const l1Controls = officialControls.filter((c) => c.control.level === "L1" && c.result.status !== "not-applicable");
+  const l2Controls = officialControls.filter((c) => c.control.level === "L2" && c.result.status !== "not-applicable");
   const l1Pass = l1Controls.filter((c) => c.result.status === "pass").length;
   const l2Pass = l2Controls.filter((c) => c.result.status === "pass").length;
 
@@ -474,7 +493,7 @@ export function CISView({ result }: CISViewProps) {
           <ScoreRing score={result.alignmentScore} />
           <p className="mt-3 text-sm text-gray-400">CIS Alignment Score</p>
           <p className="text-xs text-gray-600">
-            CIS Microsoft 365 Foundations Benchmark v{result.benchmarkVersion ?? "6.0.0"}
+            CIS Microsoft 365 Foundations Benchmark v{result.benchmarkVersion ?? "7.0.0"}
           </p>
           {result.notApplicableCount > 0 && (
             <p className="text-xs text-gray-600 mt-1">

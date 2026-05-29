@@ -1,6 +1,6 @@
 # CA Policy Analyzer
 
-> Analyze your Entra ID Conditional Access policies for best practices, FOCI token-sharing risks, known CA bypasses, CIS v6.0 benchmark alignment, and MS Learn documented exclusions — **directly in your browser, no install required.**
+> Analyze your Entra ID Conditional Access policies for best practices, FOCI token-sharing risks, known CA bypasses, CIS v7.0 benchmark alignment, and MS Learn documented exclusions — **directly in your browser, no install required.**
 
 [![Live App](https://img.shields.io/badge/Launch%20App-GitHub%20Pages-blue?logo=github)](https://jhope188.github.io/ca-policy-analyzer)
 ![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js) ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?logo=typescript) ![Tailwind CSS](https://img.shields.io/badge/Tailwind-4-38bdf8?logo=tailwindcss)
@@ -125,9 +125,9 @@ The Baseline Gap tab diffs your live tenant against a loaded Zero Trust baseline
 <!-- Open the app → load a baseline → Baseline Gap tab -->
 ![Baseline Gap Analysis](docs/screenshots/BaselineGapAnalysis.png)
 
-### CIS v6.0 — Benchmark Alignment
+### CIS v7.0 — Benchmark Alignment
 
-18 controls from the CIS Microsoft 365 Foundations Benchmark v6.0.0 with an alignment score ring. Each control shows pass/fail status, matching policies, and remediation guidance.
+17 Conditional Access controls from the CIS Microsoft 365 Foundations Benchmark v7.0.0 §5.2.2 (plus the §1.3.2 idle-session control) with an alignment score ring. Each control shows pass/fail status, matching policies, and remediation guidance. Five v6 controls with no v7 equivalent are retained as supplementary hardening (shown but not scored).
 
 <!-- Replace with actual screenshot: open the app → CIS tab -->
 ![CIS Benchmark](docs/screenshots/cis.png)
@@ -175,7 +175,7 @@ The Security Posture Score is a **composite 0–100 score** built from three wei
 
 ### Pillar 1: CIS Alignment (50 points)
 
-The CIS component is the dominant factor. Each of the 19 CIS v6.0.0 controls is weighted by level:
+The CIS component is the dominant factor. Each of the scored CIS v7.0.0 §5.2.2 controls is weighted by level:
 
 - **L1 (Essential) controls** carry **3× weight** — these are baseline controls every tenant must have
 - **L2 (Defense-in-depth) controls** carry **1× weight** — hardening measures for advanced security
@@ -230,7 +230,7 @@ Overall Score:         79 / 100  → Grade: C
 
 ---
 7. **Suggests missing policy templates** from [Jhope188/ConditionalAccessPolicies](https://github.com/Jhope188/ConditionalAccessPolicies) — 40 best-practice templates matched against your existing policies
-8. **Measures CIS v6.0 alignment** — 18 controls from CIS Microsoft 365 Foundations Benchmark v6.0.0 with pass/fail scoring and active advisories from M365 Message Center
+8. **Measures CIS v7.0 alignment** — 17 §5.2.2 Conditional Access controls from CIS Microsoft 365 Foundations Benchmark v7.0.0 with pass/fail scoring and active advisories from M365 Message Center
 9. **Flags MS Learn documented exclusions** — 17 checks for missing exclusions that Microsoft documents as required (Surface Hub, Teams Rooms, break-glass accounts, token protection prerequisites, Azure VM sign-in, Directory Sync accounts, External Authentication Methods, approved client app retirement, etc.)
 10. **Exports full analysis as JSON** — download your results for offline review or integration with other tools
 11. **License-aware scoring** — detects your tenant's Entra ID P1, P2, Intune Plan 1, and Workload Identities Premium licenses via the `/subscribedSkus` endpoint and adjusts scoring accordingly. Templates and CIS controls that require licenses you don't have are marked N/A and excluded from gap/pass-fail calculations, so your score reflects only what is achievable with your current licensing.
@@ -248,7 +248,7 @@ The app has nine tabs accessible after running an analysis:
 | **Findings** | All detected issues grouped by category and ranked by severity (Critical → Info) with affected policies and remediation guidance. Filter chips for All / Critical / High / Medium / Low / Info |
 | **Templates** | 39 best-practice policy templates compared against your tenant. **One-click load** of two persona-aligned Zero Trust baselines (Kenneth van Surksum 2025.10, Joey Verlinden Conditional Access Baseline including the full DCToolbox Config/ restore bundle) or compare against any public GitHub repo via URL / `owner/repo` shorthand |
 | **Baseline Gap** | Diff the live tenant against the loaded baseline grouped by Zero Trust persona — **Missing** / **Drift** / **Tenant-only** buckets, coverage score, and a **Download deployment bundle** button that ships a ZIP of criticality-ordered README + per-policy Graph-ready JSONs for direct import |
-| **CIS** | CIS Microsoft 365 Foundations Benchmark v6.0.0 alignment — 18 controls across sections 5.3 (Conditional Access) and 5.4 (Identity Protection & Device Controls) with M365 Message Center advisories surfaced inline |
+| **CIS** | CIS Microsoft 365 Foundations Benchmark v7.0.0 alignment — 17 Conditional Access controls in §5.2.2 (plus §1.3.2 idle session) with M365 Message Center advisories surfaced inline |
 | **Locations** | Cross-references every named location (IP ranges, countries, compliant networks) with the CA policies that include or exclude it; flags orphaned references, untrusted locations used with "All Trusted Locations", empty country lists, and overly broad IP ranges |
 | **Personas** | Tenant scored against the required-control matrix per Zero Trust persona (Global, Admins, Internals, Externals, GuestAdmins, Developers, CorpServiceAccounts, WorkloadIdentities, M365ServiceAccounts) with 10 controls each resolving to **Present** / **Report-only** / **Missing** |
 | **MS Learn** | Documented exclusion checks sourced from Microsoft Learn — flags policies missing required exclusions for token protection, Surface Hub, Teams Rooms, break-glass, CAE, External Authentication Methods, and more |
@@ -279,29 +279,41 @@ The app has nine tabs accessible after running an analysis:
 | **Baseline Drift** | Diff against a loaded Zero Trust baseline (Kenneth / Joey / custom GitHub) — categorizes every difference into Missing / Drift / Tenant-only with concrete configuration deltas |
 | **Tenant-Wide Gaps** | Missing MFA-for-all (report-only aware), no legacy auth block, no break-glass accounts |
 
-## CIS Benchmark Controls (v6.0.0)
+## CIS Benchmark Controls (v7.0.0)
 
-18 controls from CIS Microsoft 365 Foundations Benchmark v6.0.0:
+The 17 Conditional Access controls from **CIS Microsoft 365 Foundations Benchmark v7.0.0 §5.2.2** (plus the §1.3.2 idle-session control). In v7 all CA controls were consolidated into the new **§5.2.2 Conditional Access** section and renumbered:
 
 | Control | Title | Level |
 |---|---|---|
-| 5.3.1 | MFA required for all users | L1 |
-| 5.3.2 | MFA required for administrative roles | L1 |
+| 5.2.2.1 | MFA enabled for all users in administrative roles | L1 |
+| 5.2.2.2 | MFA enabled for all users | L1 |
+| 5.2.2.3 | Block legacy authentication | L1 |
+| 5.2.2.4 | Sign-in frequency + non-persistent browser for admins | L1 |
+| 5.2.2.5 | Phishing-resistant MFA strength for Administrators | L2 |
+| 5.2.2.6 | Identity Protection user risk policies (P2) | L1 |
+| 5.2.2.7 | Identity Protection sign-in risk policies (P2) | L1 |
+| 5.2.2.8 | Sign-in risk blocked for medium and high (P2) | L2 |
+| 5.2.2.9 | Managed device required for authentication | L1 |
+| 5.2.2.10 | Managed device required to register security information | L1 |
+| 5.2.2.11 | Sign-in frequency for Intune Enrollment = 'Every time' | L1 |
+| 5.2.2.12 | Device code sign-in flow blocked | L1 |
+| 5.2.2.13 | Periodic reauthentication required for all users | L1 |
+| 5.2.2.14 | Trusted 'named locations' defined | L2 |
+| 5.2.2.15 | Exclusionary geographic access controls utilized | L2 |
+| 5.2.2.16 | Token Protection enforced for session tokens | L2 |
+| 5.2.2.17 | Authentication transfer blocked | L1 |
+| 1.3.2 | Idle session timeout 3h (or less) for unmanaged devices | L2 |
+
+### Supplementary CA hardening (not scored)
+
+These controls existed in CIS v6 but have no direct v7 §5.2.2 equivalent. They are still evaluated and displayed (under a separate "Supplementary" section) but are **excluded from the official v7 alignment score**:
+
+| Control | Title | Level |
+|---|---|---|
 | 5.3.3 | MFA required for guest and external users | L1 |
-| 5.3.4 | Phishing-resistant MFA for administrators | L1 |
-| 5.3.5 | MFA required to register or join devices | L1 |
-| 5.3.6 | Sign-in risk policy configured | L1 |
-| 5.3.7 | User risk policy configured | L1 |
-| 5.3.8 | Access from non-allowed countries blocked | L1 |
-| 5.3.9 | Legacy authentication blocked | L1 |
 | 5.3.10 | Continuous access evaluation not disabled | L1 |
 | 5.3.11 | Unknown/unsupported device platforms blocked | L1 |
-| 5.3.12 | Device code flow blocked | L1 |
-| 5.3.13 | Sign-in frequency for admin portals limited | L2 |
 | 5.4.1 | High-risk users blocked | L1 |
-| 5.4.2 | High-risk sign-ins blocked | L1 |
-| 5.4.3 | Compliant device requirement configured | L2 |
-| 5.4.4 | Token protection for sensitive applications | L2 |
 | 5.4.5 | App protection policy for mobile devices | L2 |
 
 ## MS Learn Documented Exclusion Checks
@@ -354,19 +366,19 @@ When the analyzer detects a policy that excludes a FOCI app, it produces a findi
 
 ### Example: CIS Control — Pass vs Fail
 
-The CIS tab shows each of the 18 v6.0 controls with a pass/fail badge, matched policies, and remediation if failing:
+The CIS tab shows each of the v7.0 §5.2.2 controls with a pass/fail badge, matched policies, and remediation if failing:
 
 ```
-✅ 5.3.1 — Ensure multifactor authentication is required for all users    [L1]
+✅ 5.2.2.2 — Ensure multifactor authentication is enabled for all users    [L1]
    Found 2 policy(ies) requiring MFA for all users and all apps.
    Policies: "CA001 — Require MFA for all users", "Baseline — MFA"
 
-❌ 5.3.4 — Ensure phishing-resistant MFA for administrators               [L1]
+❌ 5.2.2.5 — Ensure 'Phishing-resistant MFA strength' is required for Administrators [L2]
    No policy enforces phishing-resistant authentication strength for admin roles.
    Remediation: Create a CA policy targeting admin roles with authentication
    strength set to "Phishing-resistant MFA" (FIDO2, CBA, Windows Hello).
 
-✅ 5.3.10 — Ensure continuous access evaluation is not disabled            [L1]
+✅ 5.3.10 — Ensure continuous access evaluation is not disabled  [Supplementary]
    No policy disables continuous access evaluation. CAE is active.
 ```
 
@@ -554,7 +566,7 @@ src/
 ├── components/     # Auth provider, header, dashboard, policy list, findings,
 │                   #   templates view, CIS view, exclusions view, UI primitives
 ├── data/           # FOCI database (45 apps), CA bypass database (13 apps),
-│                   #   Entra sync attack vectors (8), CIS v6.0 benchmarks (18 controls),
+│                   #   Entra sync attack vectors (8), CIS v7.0 benchmarks (17 controls),
 │                   #   policy templates (39), MS Learn documented exclusions (16 checks)
 └── lib/            # MSAL config, Graph client, analyzer engine (13 checks),
                     #   template matcher
@@ -574,7 +586,7 @@ src/
 - **Dirk-jan Mollema & Fabian Bader** — EntraScopes.com
 - **Secureworks** — Family of Client IDs Research
 - **Cloud-Architekt (Thomas Naunheim)** — [AzureAD-Attack-Defense](https://github.com/Cloud-Architekt/AzureAD-Attack-Defense) playbook — Entra Connect sync attack vectors and mitigations
-- **Center for Internet Security (CIS)** — Microsoft 365 Foundations Benchmark v6.0.0
+- **Center for Internet Security (CIS)** — Microsoft 365 Foundations Benchmark v7.0.0
 - **Microsoft Learn** — Conditional Access documented exclusions, token protection, Teams Rooms & Surface Hub compatibility
 
 ## License
