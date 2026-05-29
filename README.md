@@ -27,6 +27,13 @@ The app runs **100% in your browser** — your data never leaves your machine. I
 
 > Only the **5 most recent releases** are summarized here. Full version history lives in [CHANGELOG.md](CHANGELOG.md).
 
+### v1.15.0 — CIS benchmark upgraded to Microsoft 365 Foundations v7.0.0 (May 8, 2026)
+- **CIS v6.0.0 → v7.0.0** — v7 consolidated every Conditional Access recommendation into the new **§5.2.2 Conditional Access** section and renumbered them `5.2.2.1`–`5.2.2.17`. All controls in [src/data/cis-benchmarks.ts](src/data/cis-benchmarks.ts) were remapped to the new IDs with official v7 titles, and the alignment score now reflects the v7 §5.2.2 set (plus the §1.3.2 idle-session control).
+- **Level reassignments per v7** — phishing-resistant MFA for admins (`5.2.2.5`), exclusionary geographic controls (`5.2.2.15`), and sign-in risk blocking (`5.2.2.8`) → **L2**; admin sign-in frequency (`5.2.2.4`) and managed device for authentication (`5.2.2.9`) → **L1**.
+- **Four new v7 controls** — `5.2.2.11` (Intune Enrollment sign-in frequency = *Every time*), `5.2.2.13` (periodic reauthentication for all users ≤ 7 days), `5.2.2.14` (trusted IP-range named location defined), and `5.2.2.17` (block authentication transfer).
+- **Supplementary CA hardening tier** — five v6 controls with no v7 §5.2.2 equivalent (`5.3.3` guest/external MFA, `5.3.10` CAE not disabled, `5.3.11` unknown-platform block, `5.4.1` high-risk users blocked, `5.4.5` mobile app protection) are now flagged `supplementary: true`, grouped under a separate *Supplementary — CA Hardening* section, and **excluded from the official v7 alignment score** while still being evaluated and displayed.
+- **`5.2.2.12` device-code check tightened** to match only the `deviceCodeFlow` flow (no longer overlaps the new authentication-transfer control); **`5.2.2.4` broadened** for the non-persistent browser requirement. [cis-view.tsx](src/components/cis-view.tsx) now sorts controls by numeric ID (`5.2.2.2` before `5.2.2.10`) and the L1/L2 tiles count only official controls.
+
 ### v1.14.8 — Built-in guest baseline split into B2B-Guest + Mixed-Guests (May 8, 2026)
 - **Two-template guest model** — replaced the legacy single `External-Guest-Users` template (which collapsed all six external user types into one entry) with two purpose-built templates that match Microsoft's two operational guest buckets:
   - `GLOBAL - GRANT - MFA - B2B-Guest` covers `internalGuest, b2bCollaborationMember, b2bDirectConnectUser, serviceProvider` (first-party B2B partners + trusted service providers).
@@ -55,12 +62,7 @@ The app runs **100% in your browser** — your data never leaves your machine. I
   - `checkProtectedActions()` — the "consider phishing-resistant MFA" advisory finding for Protected Actions policies similarly missed custom strengths whose `allowedCombinations` are phishing-resistant. The advisory will no longer fire against policies that already enforce FIDO2 / WHfB / x509 cert MFA via a custom strength.
 - All four call sites now resolve `authenticationStrength.id` against `TenantContext.authStrengthPolicies` and inspect `allowedCombinations` for the canonical tokens `fido2`, `windowsHelloForBusiness`, `x509CertificateMultiFactor`, `x509CertificateSingleFactor`, `deviceBoundPasskey`, `hardwareOath`. Built-in strength id `00000000-0000-0000-0000-000000000004` matches directly; displayName regex retained as a defensive fallback.
 
-### v1.14.4 — Phishing-resistant detector fix in Persona × Control coverage (May 8, 2026)
-- **Persona × Control Coverage — `phishing-resistant-mfa` detector** — same root cause as v1.14.2 but in a different code path. The Personas tab and the persona-driven *Critical: Admins missing Phishing-resistant MFA* finding both relied on `hasPhishingResistantMfa()` in [src/lib/persona-coverage.ts](src/lib/persona-coverage.ts), which only inspected the auth-strength **displayName** with a regex.
-- Detector signature changed to `(policy, context?) => boolean` so it can resolve the strength id against `TenantContext.authStrengthPolicies` and inspect `allowedCombinations` directly.
-- `analyzePersonaCoverage()` threads `context` through to every detector call so future detectors can use catalog data without further refactor.
-
-See [CHANGELOG.md](CHANGELOG.md) for the full version history including v1.14.3 (report-only-aware MFA finding), v1.14.2 (phishing-resistant scorecard fix), v1.14.1 (deployment ZIP bundle), v1.14.0 (Deployment Plans + Persona-aware PPTX), v1.13.0 (Baseline Gap Analysis), v1.12.0 (Zero Trust Scorecard), v1.11.0 (Persona × Control Coverage) and earlier.
+See [CHANGELOG.md](CHANGELOG.md) for the full version history including v1.14.4 (phishing-resistant detector fix in persona coverage), v1.14.3 (report-only-aware MFA finding), v1.14.2 (phishing-resistant scorecard fix), v1.14.1 (deployment ZIP bundle), v1.14.0 (Deployment Plans + Persona-aware PPTX), v1.13.0 (Baseline Gap Analysis), v1.12.0 (Zero Trust Scorecard), v1.11.0 (Persona × Control Coverage) and earlier.
 
 ---
 
