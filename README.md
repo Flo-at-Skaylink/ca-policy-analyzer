@@ -27,6 +27,10 @@ The app runs **100% in your browser** — your data never leaves your machine. I
 
 > Only the **5 most recent releases** are summarized here. Full version history lives in [CHANGELOG.md](CHANGELOG.md).
 
+### v1.15.1 — CIS §1.3.2 recognises 'app enforced restrictions' (May 29, 2026)
+- **Fixed a false Fail on the idle-session-timeout control** — the §1.3.2 check only matched a `signInFrequency` session control, so a policy correctly using **app enforced restrictions** (the canonical CIS mechanism, e.g. `IAC - APP - SESSION - O365 - Timeoutsettings`) was wrongly flagged as not enforced. The official CIS v7.0.0 audit looks for `ApplicationEnforcedRestrictions.IsEnabled` on **Office 365** with **browser** client apps — app enforced restrictions is what tells SharePoint/OWA to apply the admin-center idle timeout and scopes it to unmanaged devices via the protocol.
+- The check in [src/data/cis-benchmarks.ts](src/data/cis-benchmarks.ts) now passes on either app enforced restrictions on Office 365 (All users) **or** a sign-in-frequency ≤ 3h policy scoped to unmanaged devices, and the description/remediation/portal steps were rewritten to describe the two-part control (M365 admin-center timeout + CA policy). The admin-center value is not readable via Graph, so the check verifies the Conditional Access half.
+
 ### v1.15.0 — CIS benchmark upgraded to Microsoft 365 Foundations v7.0.0 (May 8, 2026)
 - **CIS v6.0.0 → v7.0.0** — v7 consolidated every Conditional Access recommendation into the new **§5.2.2 Conditional Access** section and renumbered them `5.2.2.1`–`5.2.2.17`. All controls in [src/data/cis-benchmarks.ts](src/data/cis-benchmarks.ts) were remapped to the new IDs with official v7 titles, and the alignment score now reflects the v7 §5.2.2 set (plus the §1.3.2 idle-session control).
 - **Level reassignments per v7** — phishing-resistant MFA for admins (`5.2.2.5`), exclusionary geographic controls (`5.2.2.15`), and sign-in risk blocking (`5.2.2.8`) → **L2**; admin sign-in frequency (`5.2.2.4`) and managed device for authentication (`5.2.2.9`) → **L1**.
@@ -55,14 +59,9 @@ The app runs **100% in your browser** — your data never leaves your machine. I
 - **Root cause 2**: the token vocabulary was missing `ServiceAccounts`, `GuestUsers`, and `Agents` / `AIAgents` / `CopilotAgents` (Microsoft Entra Agent Identities → workload identities).
 - Added a numeric `CA<nnn>` prefix fallback for baselines that follow the strict numeric block convention: `CA0xx → global`, `CA1xx → admins`, `CA2xx → internals`, `CA3xx → corpserviceaccounts`, `CA4xx → externals`, `CA5xx → workloadidentities`. Token matches still take precedence so explicit names always win.
 
-### v1.14.5 — Phishing-resistant detection unified across all surfaces (May 8, 2026)
-- Extracted phishing-resistant detection into a single shared helper [src/lib/phishing-resistant.ts](src/lib/phishing-resistant.ts) so the **Zero Trust scorecard**, the **Persona × Control matrix**, and the per-policy analyzer findings (**Guest Authentication Strength**, **Protected Actions**) all use the same authoritative implementation.
-- Two additional displayName-only checks were converted to use the shared helper:
-  - `checkGuestAuthenticationStrength()` — guest auth-strength severity classification (Phishing-resistant MFA → high vs other strengths → medium) was matching the displayName regex only. A custom strength like `Modern MFA + TAP` would have been downgraded to medium even though it enforces FIDO2.
-  - `checkProtectedActions()` — the "consider phishing-resistant MFA" advisory finding for Protected Actions policies similarly missed custom strengths whose `allowedCombinations` are phishing-resistant. The advisory will no longer fire against policies that already enforce FIDO2 / WHfB / x509 cert MFA via a custom strength.
-- All four call sites now resolve `authenticationStrength.id` against `TenantContext.authStrengthPolicies` and inspect `allowedCombinations` for the canonical tokens `fido2`, `windowsHelloForBusiness`, `x509CertificateMultiFactor`, `x509CertificateSingleFactor`, `deviceBoundPasskey`, `hardwareOath`. Built-in strength id `00000000-0000-0000-0000-000000000004` matches directly; displayName regex retained as a defensive fallback.
+See [CHANGELOG.md](CHANGELOG.md) for the full version history including v1.14.5 (phishing-resistant detection unified across all surfaces), v1.14.4 (phishing-resistant detector fix in persona coverage), v1.14.3 (report-only-aware MFA finding), v1.14.2 (phishing-resistant scorecard fix), v1.14.1 (deployment ZIP bundle), v1.14.0 (Deployment Plans + Persona-aware PPTX), v1.13.0 (Baseline Gap Analysis), v1.12.0 (Zero Trust Scorecard), v1.11.0 (Persona × Control Coverage) and earlier.
 
-See [CHANGELOG.md](CHANGELOG.md) for the full version history including v1.14.4 (phishing-resistant detector fix in persona coverage), v1.14.3 (report-only-aware MFA finding), v1.14.2 (phishing-resistant scorecard fix), v1.14.1 (deployment ZIP bundle), v1.14.0 (Deployment Plans + Persona-aware PPTX), v1.13.0 (Baseline Gap Analysis), v1.12.0 (Zero Trust Scorecard), v1.11.0 (Persona × Control Coverage) and earlier.
+
 
 ---
 

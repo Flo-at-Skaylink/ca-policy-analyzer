@@ -5,6 +5,12 @@ All notable changes to the CA Policy Analyzer will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.1] - 2026-05-29
+
+### Fixed
+
+- **CIS §1.3.2 (Idle session timeout) now recognises 'Use app enforced restrictions'** — the check previously only matched a `signInFrequency` session control, so a correctly configured policy using the **app enforced restrictions** control (the canonical CIS mechanism) was incorrectly reported as *Fail* with "nothing is enforcing it". The official CIS v7.0.0 §1.3.2 audit looks for a CA policy with `ApplicationEnforcedRestrictions.IsEnabled` targeting **Office 365** with **browser** client apps — app enforced restrictions is what signals SharePoint/OWA to apply the admin-center idle timeout, and the protocol itself scopes the timeout to unmanaged (non-compliant, non-domain-joined) devices. [src/data/cis-benchmarks.ts](src/data/cis-benchmarks.ts) now passes on either (a) app enforced restrictions on Office 365 for All users, or (b) a sign-in-frequency ≤ 3h policy scoped to unmanaged devices. The description, remediation, and portal guidance were rewritten to describe the two-part control (admin-center timeout + CA policy) and note that the admin-center value is not readable via Graph.
+
 ## [1.15.0] - 2026-05-08
 
 ### Changed

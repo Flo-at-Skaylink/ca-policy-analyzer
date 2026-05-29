@@ -1602,79 +1602,92 @@ export const CIS_CONTROLS: CISControl[] = [
     level: "L2",
     section: "1.3 - Session Timeout",
     description:
-      "A Conditional Access policy should enforce a sign-in frequency of 3 hours or less for unmanaged " +
-      "(non-compliant, non-Hybrid Azure AD joined) devices. This limits the idle session window, reducing " +
-      "the risk of session hijacking on devices the organization does not manage. The CIS benchmark " +
-      "recommends configuring both the Global Idle Session Timeout in Microsoft 365 admin settings AND " +
-      "a CA policy to enforce session limits on unmanaged devices.",
+      "CIS §1.3.2 is satisfied by TWO settings working together: (1) the Global Idle Session Timeout in the " +
+      "Microsoft 365 admin center set to 3 hours or less, AND (2) a Conditional Access policy with the " +
+      '"Use app enforced restrictions" session control targeting Office 365 with browser client apps. ' +
+      "App enforced restrictions is the mechanism that signals SharePoint/OWA to apply the idle timeout, and the " +
+      "app-enforced-restrictions protocol itself only applies the timeout to unmanaged (non-compliant, non-domain-joined) " +
+      "devices — managed devices with SSO are exempt. A sign-in-frequency policy scoped to unmanaged devices is " +
+      "accepted as an equivalent alternative. Note: the admin-center timeout value cannot be read via Graph, so this " +
+      "check verifies the Conditional Access half of the control.",
     policyGuidance: {
-      suggestedName: "YOURORG - GLOBAL - SESSION - IdleTimeout-Unmanaged(3Hours)",
+      suggestedName: "YOURORG - APP - SESSION - O365 - IdleTimeout-Unmanaged",
       portalSteps: [
-        { tab: "Name", instructions: ["Enter policy name: YOURORG - GLOBAL - SESSION - IdleTimeout-Unmanaged(3Hours)"] },
+        { tab: "Prerequisites", instructions: ["Microsoft 365 admin center → Settings → Org settings → Security & Privacy → Idle session timeout → turn on and set to 3 hours (or less)"] },
+        { tab: "Name", instructions: ["Enter policy name: YOURORG - APP - SESSION - O365 - IdleTimeout-Unmanaged"] },
         { tab: "Users", instructions: ["Include → All users", "Exclude → break-glass accounts"] },
-        { tab: "Target resources", instructions: ["Cloud apps → Include → All cloud apps"] },
-        {
-          tab: "Conditions",
-          instructions: [
-            "Filter for devices → Configure Yes → Exclude filtered devices from policy",
-            "Rule syntax: device.isCompliant -eq True -or device.trustType -eq \"ServerAD\"",
-            "(This scopes the policy to unmanaged devices by excluding compliant and Hybrid Azure AD joined devices)",
-          ],
-        },
-        { tab: "Session", instructions: ["Sign-in frequency → set to 3 hours", "Persistent browser session → set to 'Never persistent'"] },
+        { tab: "Target resources", instructions: ["Cloud apps → Include → Select apps → Office 365"] },
+        { tab: "Conditions", instructions: ["Client apps → Configure Yes → check Browser only (uncheck Mobile apps and desktop clients)"] },
+        { tab: "Session", instructions: ["Use app enforced restrictions → Enabled"] },
         { tab: "Enable policy", instructions: ["Set to Report-only first, verify user experience is acceptable, then switch to On"] },
       ],
     },
     msLearnLinks: [
-      { label: "MS Learn: Sign-in frequency & session lifetime", url: "https://learn.microsoft.com/entra/identity/conditional-access/concept-session-lifetime" },
       { label: "MS Learn: M365 idle session timeout", url: "https://learn.microsoft.com/microsoft-365/admin/manage/idle-session-timeout-web-apps" },
+      { label: "MS Learn: App enforced restrictions", url: "https://learn.microsoft.com/entra/identity/conditional-access/concept-conditional-access-session#application-enforced-restrictions" },
     ],
     check: (policies) => {
-      const matching = getEnabled(policies).filter((p) => {
+      const targetsOffice365 = (p: ConditionalAccessPolicy) =>
+        p.conditions.applications.includeApplications.some(
+          (a) => a.toLowerCase() === "office365"
+        );
+
+      // Primary CIS mechanism: "Use app enforced restrictions" on Office 365.
+      // The app-enforced-restrictions protocol itself differentiates managed vs
+      // unmanaged devices, so no device filter is required here.
+      const appEnforced = getEnabled(policies).filter((p) => {
+        const aer = p.sessionControls?.applicationEnforcedRestrictions?.isEnabled === true;
+        return aer && (targetsOffice365(p) || targetsAllApps(p)) && targetsAllUsers(p);
+      });
+
+      // Accepted alternative: a sign-in-frequency policy (≤ 3h) scoped to
+      // unmanaged devices.
+      const signInFreq = getEnabled(policies).filter((p) => {
         const sif = p.sessionControls?.signInFrequency;
         if (!sif?.isEnabled || sif.value == null) return false;
-
-        // Convert to minutes for comparison
         const minutes =
           sif.type === "hours"
             ? sif.value * 60
             : sif.type === "days"
               ? sif.value * 24 * 60
-              : sif.value; // assume minutes if unrecognised type
-
-        // Must be ≤ 180 minutes (3 hours)
+              : sif.value;
         if (minutes > 180) return false;
-
-        // Should target broadly — not just admin roles (that's 5.2.2.4)
         const broadTarget =
-          targetsAllUsers(p) ||
-          p.conditions.users.includeGroups.length > 0;
-
-        // Extra confidence if the policy scopes to unmanaged devices
+          targetsAllUsers(p) || p.conditions.users.includeGroups.length > 0;
         const hasDeviceFilter = p.conditions.devices?.deviceFilter != null;
-        const hasAppRestrictions =
-          p.sessionControls?.applicationEnforcedRestrictions?.isEnabled === true;
-        const hasPersistentBrowserNever =
+        const persistentNever =
           p.sessionControls?.persistentBrowser?.isEnabled === true &&
           p.sessionControls?.persistentBrowser?.mode === "never";
-
-        // Accept if broad target or device-filtered
-        return broadTarget || hasDeviceFilter || hasAppRestrictions || hasPersistentBrowserNever;
+        return broadTarget && (hasDeviceFilter || persistentNever);
       });
+
+      const matching = [...new Set([...appEnforced, ...signInFreq])];
+
+      const detailParts: string[] = [];
+      if (appEnforced.length > 0) {
+        detailParts.push(
+          `${appEnforced.length} policy(ies) use 'app enforced restrictions' on Office 365 (CIS-canonical idle-timeout mechanism)`
+        );
+      }
+      if (signInFreq.length > 0) {
+        detailParts.push(
+          `${signInFreq.length} policy(ies) enforce sign-in frequency ≤ 3h for unmanaged devices (accepted alternative)`
+        );
+      }
 
       return {
         status: matching.length > 0 ? "pass" : "fail",
         detail:
           matching.length > 0
-            ? `Found ${matching.length} policy(ies) enforcing session timeout ≤ 3 hours for unmanaged devices.`
-            : "No CA policy enforces idle session timeout of 3 hours or less for unmanaged devices.",
+            ? `${detailParts.join("; ")}. Confirm the Microsoft 365 admin-center Idle session timeout is also set to ≤ 3 hours (not readable via Graph).`
+            : "No CA policy applies app enforced restrictions on Office 365 (or a sign-in-frequency ≤ 3h policy for unmanaged devices).",
         matchingPolicies: matching.map((p) => p.displayName),
         remediation:
-          "Create a CA policy targeting all users → all cloud apps with session control " +
-          "sign-in frequency set to 3 hours or less. Scope to unmanaged devices using a device filter " +
-          '(exclude devices where device.isCompliant -eq True -or device.trustType -eq "ServerAD") ' +
-          "and set persistent browser to 'Never persistent'. Also configure the Global Idle Session " +
-          "Timeout in Microsoft 365 admin center → Org settings → Security & privacy → Idle session timeout.",
+          "Two parts are required for CIS §1.3.2: " +
+          "(1) Microsoft 365 admin center → Settings → Org settings → Security & Privacy → Idle session timeout → set to 3 hours or less; AND " +
+          '(2) a Conditional Access policy targeting All users → Office 365, Client apps = Browser only, Session = "Use app enforced restrictions", enabled. ' +
+          "App enforced restrictions automatically scopes the timeout to unmanaged devices. " +
+          "(Alternatively, a sign-in-frequency ≤ 3h policy scoped to unmanaged devices via a device filter is accepted.)",
       };
     },
   },
