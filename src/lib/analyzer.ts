@@ -1302,7 +1302,42 @@ function checkCredentialRegistrationConstraints(
     );
   }
 
-  if (issues.length === 0) return findings;
+  // No blocking constraints detected — emit an informational finding so the
+  // policy still surfaces the MC1326253 change context and confirms it looks
+  // safe to apply during WHfB / macOS Platform SSO registration.
+  if (issues.length === 0) {
+    const stateNote =
+      policy.state === "enabledForReportingButNotEnforced"
+        ? `This policy is currently in **report-only** mode — switch it to **On** before July 6, 2026 if you want it enforced during registration.`
+        : `This policy is **enabled**, so it will begin applying during registration automatically as the rollout reaches your tenant.`;
+
+    findings.push({
+      id: nextFindingId(),
+      policyId: policy.id,
+      policyName: policy.displayName,
+      severity: "info",
+      category: "Credential Registration Constraints",
+      title: 'Targets "Register security info" — will apply to WHfB / Platform SSO registration (July 2026)',
+      description:
+        `**From July 6, 2026** (rollout complete July 13, 2026), this policy will be evaluated during Windows Hello for Business ` +
+        `and macOS Platform SSO credential registration — not just sign-in. Today these flows enforce MFA but do not evaluate your ` +
+        `registration-targeting Conditional Access policies; this change (Microsoft Message Center post **MC1326253**) closes that gap.\n\n` +
+        `**Good news:** this policy requires only **MFA / authentication strength** with no device-compliance, trusted-location, ` +
+        `approved/protected-app, or device-filter constraints — so it should **not** block users provisioning a new device. ` +
+        `This is the recommended configuration for a registration-targeting policy.\n\n` +
+        stateNote,
+      recommendation:
+        `No changes required. Before the rollout reaches your tenant (July 6–13, 2026):\n\n` +
+        `1. **Confirm the grant control is achievable on a new device** — e.g. a user enrolling WHfB can satisfy your ` +
+        `authentication strength (FIDO2 key, Authenticator push, or a Temporary Access Pass) without already holding the ` +
+        `credential they're about to register.\n\n` +
+        `2. **Keep it free of device/location constraints** — adding device compliance or a trusted-location requirement here ` +
+        `would block first-time setup from new or remote devices.\n\n` +
+        `3. **Update helpdesk docs** — users may see a new authentication prompt during device setup.\n\n` +
+        `Reference: MC1326253 / [Require MFA for security info registration](https://learn.microsoft.com/entra/identity/conditional-access/policy-all-users-security-info-registration).`,
+    });
+    return findings;
+  }
 
   // Determine severity based on how likely this is to block legitimate enrollment
   let severity: Severity = "medium";

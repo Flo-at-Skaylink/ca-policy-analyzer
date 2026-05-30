@@ -5,6 +5,12 @@ All notable changes to the CA Policy Analyzer will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.3] - 2026-05-30
+
+### Added
+
+- **Informational finding for safe "Register security info" policies (MC1326253)** — the credential-registration check in [src/lib/analyzer.ts](src/lib/analyzer.ts) previously stayed silent on policies targeting `urn:user:registersecurityinfo` that had no blocking constraints, so a well-configured registration policy (MFA / authentication strength only) surfaced *no* finding at all and gave no indication it would be affected by the July 2026 change. It now emits an **info-level** finding confirming the policy targets *Register security info*, that it will begin applying during **Windows Hello for Business** and **macOS Platform SSO** registration from **July 6, 2026** (complete July 13), and that it looks safe because it carries no device-compliance, trusted-location, approved/protected-app, or device-filter constraints. The message is report-only-aware (prompts to switch report-only policies to *On* before enforcement) and links to MC1326253. Policies that *do* carry blocking constraints continue to raise the existing medium/high finding.
+
 ## [1.15.2] - 2026-05-30
 
 ### Changed
