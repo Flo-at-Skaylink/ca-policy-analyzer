@@ -5,6 +5,12 @@ All notable changes to the CA Policy Analyzer will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.2] - 2026-05-30
+
+### Changed
+
+- **"Register security info" credential-registration check updated for the confirmed MC1326253 rollout** — Microsoft has now published the official Message Center post **MC1326253** ("Conditional Access policies now apply to Windows Hello for Business and macOS Platform SSO registration"), superseding the earlier preliminary guidance. The `checkCredentialRegistrationConstraints` check in [src/lib/analyzer.ts](src/lib/analyzer.ts) was updated with the confirmed scope and dates: Conditional Access policies scoped to **Register security info** will be evaluated during **Windows Hello for Business** and **macOS Platform SSO** credential registration, closing the gap where these flows previously enforced MFA but did *not* evaluate registration-targeting CA policies (authentication strength, trusted locations, other Grant controls). Gradual rollout begins **July 6, 2026** and completes **July 13, 2026**. The finding title, description, report-only-mode guidance, and reference link (MC1326253 / [policy-all-users-security-info-registration](https://learn.microsoft.com/entra/identity/conditional-access/policy-all-users-security-info-registration)) were all updated from the previous "May 2026 / MC March 2026" placeholders.
+
 ## [1.15.1] - 2026-05-29
 
 ### Fixed
