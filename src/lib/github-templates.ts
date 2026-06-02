@@ -376,6 +376,15 @@ function buildFingerprint(
   if (includeUsers.includes("All")) fp.targetsAllUsers = true;
   if (includeRoles.length > 0) fp.targetRoles = includeRoles;
 
+  // Agent identity targeting
+  const clientApplications = conditions?.clientApplications as Record<string, unknown> | undefined;
+  const agentIdPrincipals = (clientApplications?.includeAgentIdServicePrincipals as string[]) ?? [];
+  if (agentIdPrincipals.length > 0) fp.targetsAgentIdentities = true;
+
+  // Agent identity risk level (single string value, not array)
+  const agentIdRisk = conditions?.agentIdRiskLevels as string | undefined;
+  if (agentIdRisk) fp.agentIdRiskLevels = [agentIdRisk.toLowerCase()];
+
   const signInRisk = (conditions?.signInRiskLevels as string[]) ?? [];
   const userRisk = (conditions?.userRiskLevels as string[]) ?? [];
   if (signInRisk.length > 0) fp.signInRiskLevels = signInRisk;

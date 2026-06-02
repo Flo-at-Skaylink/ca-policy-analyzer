@@ -145,6 +145,22 @@ function scorePolicyMatch(
     }
   }
 
+  // ── Agent identity targeting (weight: 15) ─────────────────────────
+  if (fingerprint.targetsAgentIdentities) {
+    totalWeight += 15;
+    const clientApps = (policy.conditions as Record<string, unknown>).clientApplications as
+      | { includeAgentIdServicePrincipals?: string[] }
+      | null | undefined;
+    const agentPrincipals = clientApps?.includeAgentIdServicePrincipals ?? [];
+    if (agentPrincipals.length > 0) {
+      matchedWeight += 15;
+    } else {
+      differences.push(
+        "Principal: template targets agent identities (includeAgentIdServicePrincipals), not found in policy"
+      );
+    }
+  }
+
   if (fingerprint.targetRoles && fingerprint.targetRoles.length > 0) {
     totalWeight += 15;
     const policyRoles = new Set(
@@ -239,6 +255,20 @@ function scorePolicyMatch(
     } else {
       differences.push(
         `User risk: template requires [${fingerprint.userRiskLevels.join(", ")}], not configured`
+      );
+    }
+  }
+
+  // ── Agent identity risk levels (weight: 20) ──────────────────────
+  if (fingerprint.agentIdRiskLevels && fingerprint.agentIdRiskLevels.length > 0) {
+    totalWeight += 20;
+    const policyAgentRisk = ((policy.conditions as Record<string, unknown>).agentIdRiskLevels as string | undefined ?? "").toLowerCase();
+    const templateRisk = new Set(fingerprint.agentIdRiskLevels.map((r) => r.toLowerCase()));
+    if (policyAgentRisk && templateRisk.has(policyAgentRisk)) {
+      matchedWeight += 20;
+    } else {
+      differences.push(
+        `Agent risk: template requires [${fingerprint.agentIdRiskLevels.join(", ")}], not configured`
       );
     }
   }

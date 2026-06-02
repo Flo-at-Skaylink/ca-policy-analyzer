@@ -79,6 +79,10 @@ export interface TemplateFingerprint {
   authenticationFlows?: string[];
   /** User actions */
   includeUserActions?: string[];
+  /** Agent identity risk levels — matches conditions.agentIdRiskLevels (Preview) */
+  agentIdRiskLevels?: string[];
+  /** Policy targets agent identities via clientApplications.includeAgentIdServicePrincipals */
+  targetsAgentIdentities?: boolean;
   /** Location-based (uses named locations) */
   usesLocationCondition?: boolean;
   /** Targets guests/external users */
@@ -116,6 +120,8 @@ export interface DeploymentPolicy {
     };
     userRiskLevels?: string[];
     signInRiskLevels?: string[];
+    /** Agent identity risk level (Preview) — value is a single string e.g. "high" */
+    agentIdRiskLevels?: string;
     authenticationFlows?: { transferMethods?: string };
   };
   grantControls?: {
@@ -2002,14 +2008,16 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
     fingerprint: {
       includeApps: ["All"],
       grantControls: ["block"],
-      signInRiskLevels: ["high"],
+      targetsAgentIdentities: true,
+      agentIdRiskLevels: ["high"],
     },
     deploymentJson: {
       displayName: "YOURORG - AGENT - BLOCK - HighRiskAgents",
       state: "disabled",
       conditions: {
         users: {
-          includeUsers: ["All"],
+          // Agent policies scope via clientApplications, not users
+          includeUsers: ["None"],
           excludeUsers: [],
           includeGroups: [],
           excludeGroups: [],
@@ -2022,7 +2030,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
           includeUserActions: [],
         },
         clientAppTypes: ["all"],
-        signInRiskLevels: ["high"],
+        agentIdRiskLevels: "high",
       },
       grantControls: {
         operator: "OR",
