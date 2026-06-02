@@ -2708,9 +2708,9 @@ export const CATEGORY_META: Record<
     icon: "🤖",
   },
   "lewis-barry": {
-    label: "Lewis Barry — Starter Set",
+    label: "Lewis Barry - Baseline",
     description:
-      "An opinionated 12-policy starter set by Lewis Barry (Microsoft MVP, conditionalaccess.uk). Covers MFA for all users, legacy auth blocking, unsupported OS blocking, mobile app protection (MAM-WE), compliant desktop, device code flow blocking, sign-in/user risk policies, Windows token protection, break-glass FIDO2, security info registration controls, and auth-transfer blocking.",
+      "An opinionated 12-policy baseline by Lewis Barry (Microsoft MVP, conditionalaccess.uk). Covers MFA for all users, legacy auth blocking, unsupported OS blocking, mobile app protection (MAM-WE), compliant desktop, device code flow blocking, sign-in/user risk policies, Windows token protection, break-glass FIDO2, security info registration controls, and auth-transfer blocking.",
     icon: "🧰",
   },
 };

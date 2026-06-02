@@ -580,7 +580,11 @@ export function TemplatesView({
 
   const filteredMatches = result.matches
     .filter((m) => statusFilter === "all" || m.status === statusFilter)
-    .filter((m) => categoryFilter === null || m.template.category === categoryFilter);
+    .filter((m) =>
+      categoryFilter === null
+        ? m.template.category !== "lewis-barry"
+        : m.template.category === categoryFilter
+    );
 
   // Group by category
   const categories = [
@@ -767,43 +771,43 @@ export function TemplatesView({
               </p>
             </div>
 
-            {/* Built-in starter sets (filter view) */}
+            {/* Built-in baselines (dropdown select) */}
             <div className="space-y-2">
               <p className="text-xs font-medium text-gray-400">
-                Built-in starter sets (filter view):
+                Built-in baselines:
               </p>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() =>
-                    setCategoryFilter((prev) =>
-                      prev === "lewis-barry" ? null : "lewis-barry"
-                    )
-                  }
-                  title="Lewis Barry (Microsoft MVP) — An opinionated 12-policy starter set. Source: conditionalaccess.uk"
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition-colors",
-                    categoryFilter === "lewis-barry"
-                      ? "border-blue-500 bg-blue-600/20 text-blue-300"
-                      : "border-gray-700 bg-gray-800 text-gray-200 hover:bg-gray-700 hover:border-gray-600"
-                  )}
-                >
-                  🧰 Lewis Barry — Starter Set
-                  {categoryFilter === "lewis-barry" && (
-                    <X className="h-3 w-3 ml-0.5" />
-                  )}
-                </button>
-              </div>
-              <p className="text-[11px] text-gray-500">
-                Built-in templates sourced from community authors. Click to filter the template list to that set only. Source:{" "}
-                <a
-                  href="https://conditionalaccess.uk/blog/some-policies-i-use-in-conditional-access/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-400 hover:text-blue-300 underline"
-                >
-                  conditionalaccess.uk
-                </a>
-              </p>
+              <select
+                value={categoryFilter === "lewis-barry" ? "lewis-barry" : ""}
+                onChange={(e) =>
+                  setCategoryFilter(
+                    e.target.value === "lewis-barry" ? "lewis-barry" : null
+                  )
+                }
+                className="rounded-md border border-gray-700 bg-gray-800 px-2.5 py-1.5 text-xs text-gray-200 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="">— Select a baseline —</option>
+                <option value="lewis-barry">🧰 Lewis Barry - Baseline</option>
+              </select>
+              {categoryFilter === "lewis-barry" && (
+                <p className="text-[11px] text-gray-500">
+                  Showing Lewis Barry&apos;s baseline only.{" "}
+                  <a
+                    href="https://conditionalaccess.uk/blog/some-policies-i-use-in-conditional-access/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-400 hover:text-blue-300 underline"
+                  >
+                    conditionalaccess.uk
+                  </a>
+                  {" — "}
+                  <button
+                    onClick={() => setCategoryFilter(null)}
+                    className="text-gray-400 hover:text-gray-300 underline"
+                  >
+                    Clear
+                  </button>
+                </p>
+              )}
             </div>
             <div className="flex gap-2">
               <input
