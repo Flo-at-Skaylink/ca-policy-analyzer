@@ -1299,9 +1299,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
     summary:
       "Block file downloads from Office 365 on unmanaged (non-compliant) devices",
     rationale:
-      "Preventing file downloads on unmanaged devices limits data exfiltration risk while still allowing browser-based viewing of corporate data for BYOD users.",
-    prerequisites:
-      "Requires Microsoft Defender for Cloud Apps (MDCA / MCAS). Each Office 365 app (Exchange Online, SharePoint Online, Teams) must be onboarded to MDCA as a Connected App and have Conditional Access App Control enabled before the session policy takes effect. Without MDCA, the 'blockDownloads' session control silently does nothing.",
+      "Preventing file downloads on unmanaged devices limits data exfiltration risk while still allowing browser-based viewing of corporate data for BYOD users. The 'Block downloads (Preview)' session control uses Conditional Access App Control and works instantly for featured apps (Exchange Online, SharePoint Online, Teams) — no separate MDCA deployment is required. Any app can be self-onboarded via the CA App Control proxy.",
     licenseRequirement: "intunePlan1",
     fingerprint: {
       includeApps: ["Office365"],
