@@ -5,6 +5,47 @@ All notable changes to the CA Policy Analyzer will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.3] - 2026-05-30
+
+### Added
+
+- **Informational finding for safe "Register security info" policies (MC1326253)** — the credential-registration check in [src/lib/analyzer.ts](src/lib/analyzer.ts) previously stayed silent on policies targeting `urn:user:registersecurityinfo` that had no blocking constraints, so a well-configured registration policy (MFA / authentication strength only) surfaced *no* finding at all and gave no indication it would be affected by the July 2026 change. It now emits an **info-level** finding confirming the policy targets *Register security info*, that it will begin applying during **Windows Hello for Business** and **macOS Platform SSO** registration from **July 6, 2026** (complete July 13), and that it looks safe because it carries no device-compliance, trusted-location, approved/protected-app, or device-filter constraints. The message is report-only-aware (prompts to switch report-only policies to *On* before enforcement) and links to MC1326253. Policies that *do* carry blocking constraints continue to raise the existing medium/high finding.
+
+## [1.15.2] - 2026-05-30
+
+### Changed
+
+- **"Register security info" credential-registration check updated for the confirmed MC1326253 rollout** — Microsoft has now published the official Message Center post **MC1326253** ("Conditional Access policies now apply to Windows Hello for Business and macOS Platform SSO registration"), superseding the earlier preliminary guidance. The `checkCredentialRegistrationConstraints` check in [src/lib/analyzer.ts](src/lib/analyzer.ts) was updated with the confirmed scope and dates: Conditional Access policies scoped to **Register security info** will be evaluated during **Windows Hello for Business** and **macOS Platform SSO** credential registration, closing the gap where these flows previously enforced MFA but did *not* evaluate registration-targeting CA policies (authentication strength, trusted locations, other Grant controls). Gradual rollout begins **July 6, 2026** and completes **July 13, 2026**. The finding title, description, report-only-mode guidance, and reference link (MC1326253 / [policy-all-users-security-info-registration](https://learn.microsoft.com/entra/identity/conditional-access/policy-all-users-security-info-registration)) were all updated from the previous "May 2026 / MC March 2026" placeholders.
+
+## [1.15.1] - 2026-05-29
+
+### Fixed
+
+- **CIS §1.3.2 (Idle session timeout) now recognises 'Use app enforced restrictions'** — the check previously only matched a `signInFrequency` session control, so a correctly configured policy using the **app enforced restrictions** control (the canonical CIS mechanism) was incorrectly reported as *Fail* with "nothing is enforcing it". The official CIS v7.0.0 §1.3.2 audit looks for a CA policy with `ApplicationEnforcedRestrictions.IsEnabled` targeting **Office 365** with **browser** client apps — app enforced restrictions is what signals SharePoint/OWA to apply the admin-center idle timeout, and the protocol itself scopes the timeout to unmanaged (non-compliant, non-domain-joined) devices. [src/data/cis-benchmarks.ts](src/data/cis-benchmarks.ts) now passes on either (a) app enforced restrictions on Office 365 for All users, or (b) a sign-in-frequency ≤ 3h policy scoped to unmanaged devices. The description, remediation, and portal guidance were rewritten to describe the two-part control (admin-center timeout + CA policy) and note that the admin-center value is not readable via Graph.
+
+## [1.15.0] - 2026-05-28
+
+### Changed
+
+- **CIS benchmark upgraded from v6.0.0 to v7.0.0** — CIS Microsoft 365 Foundations Benchmark v7.0.0 consolidated every Conditional Access recommendation into a single new section, **§5.2.2 Conditional Access** (under Entra ID → ID Protection), and renumbered them `5.2.2.1`–`5.2.2.17`. All controls in [src/data/cis-benchmarks.ts](src/data/cis-benchmarks.ts) were remapped to the new IDs, titles were updated to the official v7 wording, and the alignment score now reflects the v7 §5.2.2 set (plus the §1.3.2 idle-session control).
+- **Level reassignments per v7:** phishing-resistant MFA for admins (`5.2.2.5`) → **L2**; exclusionary geographic controls (`5.2.2.15`) → **L2**; sign-in risk blocking (`5.2.2.8`) → **L2**; admin sign-in frequency (`5.2.2.4`) → **L1**; managed device for authentication (`5.2.2.9`) → **L1**.
+- **`5.2.2.4` broadened** — now checks for limited admin sign-in frequency **and** documents the non-persistent browser requirement (`Never persistent`) that v7 adds to the control.
+- **`5.2.2.12` device-code check tightened** — now matches only the `deviceCodeFlow` authentication-flow method, so it no longer overlaps with the new authentication-transfer control.
+
+### Added
+
+- **Four new v7 controls** in [src/data/cis-benchmarks.ts](src/data/cis-benchmarks.ts):
+  - **`5.2.2.11`** (L1) — Sign-in frequency for **Microsoft Intune Enrollment** set to *Every time* (matches the `everyTime` interval on the Intune Enrollment resource, app ID `d4ebce55-015a-49b5-a083-c84d1797ae8c`).
+  - **`5.2.2.13`** (L1) — **Periodic reauthentication** required for all users (sign-in frequency ≤ 7 days on All users → All resources).
+  - **`5.2.2.14`** (L2) — At least one **trusted IP-range named location** defined (evaluated against the tenant's named locations).
+  - **`5.2.2.17`** (L1) — **Authentication transfer** blocked (block grant with the `authenticationTransfer` flow condition).
+- **Supplementary CA hardening tier** — five v6 controls with no v7 §5.2.2 equivalent (`5.3.3` guest/external MFA, `5.3.10` CAE not disabled, `5.3.11` unknown-platform block, `5.4.1` high-risk users blocked, `5.4.5` mobile app protection) are now flagged `supplementary: true`, grouped under a separate *"Supplementary — CA Hardening"* section, and **excluded from the official v7 alignment score** while still being evaluated and displayed.
+
+### Fixed
+
+- **CIS controls now render in numeric ID order** — [src/components/cis-view.tsx](src/components/cis-view.tsx) sorts controls with a natural comparator so `5.2.2.2` sorts before `5.2.2.10`, and supplementary `5.3.x`/`5.4.x` controls group after the §5.2.2 set. The L1/L2 breakdown tiles count only the official (non-supplementary) controls.
+- Refreshed stale `CIS 5.3.11` references in [src/lib/analyzer.ts](src/lib/analyzer.ts), the benchmark file header, and README to reflect v7 numbering.
+
 ## [1.14.8] - 2026-05-08
 
 ### Changed

@@ -1,20 +1,27 @@
 /**
  * CIS Microsoft 365 Foundations Benchmark — Conditional Access Controls
  *
- * Based on CIS Microsoft 365 Foundations Benchmark v6.0.0
+ * Based on CIS Microsoft 365 Foundations Benchmark v7.0.0
  * Section 1.3: Session Timeout (idle session timeout CA policy)
- * Section 5.3: Conditional Access Policies
- * Section 5.4: Identity Protection & Device Controls
+ * Section 5.2.2: Conditional Access (all CA controls)
  *
- * v6.0 Changes from v4.0:
- *   - Section renumbered: 6.2/6.3 → 5.3/5.4
- *   - Sign-in risk and user risk promoted from L2 → L1
- *   - Added: Phishing-resistant MFA for admins (5.3.4)
- *   - Added: Token protection for sensitive apps (5.4.4)
- *   - Added: Continuous access evaluation not disabled (5.3.10)
- *   - Added: High-risk users/sign-ins blocking (5.4.1/5.4.2)
- *   - Added: App protection for mobile (5.4.5)
- *   - Added: Block unknown/unsupported platforms (5.3.11)
+ * v7.0 Changes from v6.0:
+ *   - MAJOR restructuring: all CA controls relocated from §5.3/§5.4 into the new
+ *     §5.2.2 "Conditional Access" section (under Entra ID > ID Protection) and
+ *     renumbered 5.2.2.1 – 5.2.2.17.
+ *   - Level changes: phishing-resistant MFA for admins → L2 (5.2.2.5);
+ *     exclusionary geographic controls → L2 (5.2.2.15); sign-in risk blocking
+ *     → L2 (5.2.2.8); admin sign-in frequency → L1 (5.2.2.4); managed device
+ *     for authentication → L1 (5.2.2.9).
+ *   - New controls added:
+ *       5.2.2.11 Sign-in frequency for Intune Enrollment = 'Every time' (L1)
+ *       5.2.2.13 Periodic reauthentication required for all users (L1)
+ *       5.2.2.14 Trusted 'named locations' defined (L2)
+ *       5.2.2.17 Authentication transfer blocked (L1)
+ *   - Controls without a v7 §5.2.2 equivalent are retained as "Supplementary"
+ *     CA hardening (guest/external MFA, CAE not disabled, block unknown
+ *     platforms, block high-risk users, mobile app protection). These are
+ *     evaluated and displayed but excluded from the official alignment score.
  *
  * Each control defines:
  *   - What to check in the tenant's CA policies
@@ -51,7 +58,7 @@ export interface Advisory {
 }
 
 export interface CISControl {
-  /** CIS control ID, e.g. "5.3.1" */
+  /** CIS control ID, e.g. "5.2.2.1" */
   id: string;
   /** CIS section title */
   title: string;
@@ -63,6 +70,8 @@ export interface CISControl {
   description: string;
   /** License required to evaluate this control (undefined = no special license needed) */
   licenseRequirement?: LicenseRequirement;
+  /** Supplementary CA hardening — not part of official CIS v7 §5.2.2; excluded from the alignment score */
+  supplementary?: boolean;
   /** Step-by-step policy creation guidance when the check fails */
   policyGuidance?: PolicyGuidance;
   /** MS Learn documentation references for this control */
@@ -261,13 +270,13 @@ function detectNearMissPolicies(
 
 export const CIS_CONTROLS: CISControl[] = [
   // ═══════════════════════════════════════════════════════════════════════
-  // Section 5.3 — Conditional Access Policies
+  // Section 5.2.2 — Conditional Access
   // ═══════════════════════════════════════════════════════════════════════
   {
-    id: "5.3.1",
-    title: "Ensure multifactor authentication is required for all users",
+    id: "5.2.2.2",
+    title: "Ensure multifactor authentication is enabled for all users",
     level: "L1",
-    section: "5.3 - Conditional Access",
+    section: "5.2.2 - Conditional Access",
     description:
       'A CA policy must exist that targets "All users" and "All cloud apps" with MFA as a grant control ' +
       "(or authentication strength requiring MFA). The policy must be enabled or in report-only mode.",
@@ -317,10 +326,10 @@ export const CIS_CONTROLS: CISControl[] = [
     },
   },
   {
-    id: "5.3.2",
-    title: "Ensure multifactor authentication is required for administrative roles",
+    id: "5.2.2.1",
+    title: "Ensure multifactor authentication is enabled for all users in administrative roles",
     level: "L1",
-    section: "5.3 - Conditional Access",
+    section: "5.2.2 - Conditional Access",
     description:
       "A dedicated CA policy must require MFA specifically for admin directory roles. Even if an all-users MFA policy " +
       "exists, a separate admin policy provides defense-in-depth and can enforce stronger authentication.",
@@ -362,7 +371,8 @@ export const CIS_CONTROLS: CISControl[] = [
     id: "5.3.3",
     title: "Ensure multifactor authentication is required for guest and external users",
     level: "L1",
-    section: "5.3 - Conditional Access",
+    section: "Supplementary - CA Hardening (not in CIS v7 §5.2.2)",
+    supplementary: true,
     description:
       "A CA policy must require MFA for guest, B2B collaboration, and external users to prevent unauthorized access " +
       "through external identities.",
@@ -426,10 +436,10 @@ export const CIS_CONTROLS: CISControl[] = [
     },
   },
   {
-    id: "5.3.4",
-    title: "Ensure phishing-resistant MFA strength is required for administrators",
-    level: "L1",
-    section: "5.3 - Conditional Access",
+    id: "5.2.2.5",
+    title: "Ensure 'Phishing-resistant MFA strength' is required for Administrators",
+    level: "L2",
+    section: "5.2.2 - Conditional Access",
     description:
       "Administrative roles must be protected with phishing-resistant MFA (FIDO2, certificate-based, or Windows Hello). " +
       "Standard MFA (push notifications, OTP) is not sufficient for admin accounts due to MFA fatigue and social engineering risks.",
@@ -488,10 +498,10 @@ export const CIS_CONTROLS: CISControl[] = [
     },
   },
   {
-    id: "5.3.5",
-    title: "Ensure MFA is required to register or join devices",
+    id: "5.2.2.10",
+    title: "Ensure a managed device is required to register security information",
     level: "L1",
-    section: "5.3 - Conditional Access",
+    section: "5.2.2 - Conditional Access",
     description:
       "A CA policy must require MFA for the user action 'Register or join devices' OR 'Register security information', " +
       "preventing unauthorized device registration.",
@@ -533,14 +543,14 @@ export const CIS_CONTROLS: CISControl[] = [
     },
   },
   {
-    id: "5.3.6",
-    title: "Ensure sign-in risk policy is configured",
+    id: "5.2.2.7",
+    title: "Enable Identity Protection sign-in risk policies",
     level: "L1",
-    section: "5.3 - Conditional Access",
+    section: "5.2.2 - Conditional Access",
     licenseRequirement: "entraIdP2",
     description:
       "A risk-based CA policy must require MFA or block access for medium and high-risk sign-ins " +
-      "detected by Identity Protection. Promoted from L2 to L1 in v6.0.",
+      "detected by Identity Protection. Requires Entra ID P2; classified E5 Level 1 in CIS v7.",
     policyGuidance: {
       suggestedName: "YOURORG - P2 - GLOBAL - GRANT - SignInRisk-MediumHigh",
       portalSteps: [
@@ -602,14 +612,14 @@ export const CIS_CONTROLS: CISControl[] = [
     },
   },
   {
-    id: "5.3.7",
-    title: "Ensure user risk policy is configured",
+    id: "5.2.2.6",
+    title: "Enable Identity Protection user risk policies",
     level: "L1",
-    section: "5.3 - Conditional Access",
+    section: "5.2.2 - Conditional Access",
     licenseRequirement: "entraIdP2",
     description:
       "A risk-based CA policy must require password change and MFA (or Require Risk Remediation) for medium and high-risk users " +
-      "detected by Identity Protection. Promoted from L2 to L1 in v6.0.",
+      "detected by Identity Protection. Requires Entra ID P2; classified E5 Level 1 in CIS v7.",
     policyGuidance: {
       suggestedName: "YOURORG - P2 - GLOBAL - GRANT - UserRisk-MediumHigh",
       portalSteps: [
@@ -675,10 +685,10 @@ export const CIS_CONTROLS: CISControl[] = [
     },
   },
   {
-    id: "5.3.8",
-    title: "Ensure access from non-allowed countries is blocked",
-    level: "L1",
-    section: "5.3 - Conditional Access",
+    id: "5.2.2.15",
+    title: "Ensure exclusionary geographic access controls are utilized",
+    level: "L2",
+    section: "5.2.2 - Conditional Access",
     description:
       "A CA policy must block access from countries where the organization does not operate using named locations.",
     policyGuidance: {
@@ -792,10 +802,10 @@ export const CIS_CONTROLS: CISControl[] = [
     },
   },
   {
-    id: "5.3.9",
-    title: "Ensure legacy authentication is blocked",
+    id: "5.2.2.3",
+    title: "Enable Conditional Access policies to block legacy authentication",
     level: "L1",
-    section: "5.3 - Conditional Access",
+    section: "5.2.2 - Conditional Access",
     description:
       "Legacy authentication protocols (IMAP, POP3, SMTP, Exchange ActiveSync) must be blocked " +
       "because they cannot enforce MFA and are a primary attack vector for password spray and credential stuffing.",
@@ -840,7 +850,8 @@ export const CIS_CONTROLS: CISControl[] = [
     id: "5.3.10",
     title: "Ensure continuous access evaluation is not disabled",
     level: "L1",
-    section: "5.3 - Conditional Access",
+    section: "Supplementary - CA Hardening (not in CIS v7 §5.2.2)",
+    supplementary: true,
     description:
       "Continuous access evaluation (CAE) enables real-time revocation of access tokens when security events occur. " +
       "No CA policy should explicitly disable CAE, as this creates a vulnerability window up to 1 hour after a " +
@@ -880,7 +891,8 @@ export const CIS_CONTROLS: CISControl[] = [
     id: "5.3.11",
     title: "Ensure unknown or unsupported device platforms are blocked",
     level: "L1",
-    section: "5.3 - Conditional Access",
+    section: "Supplementary - CA Hardening (not in CIS v7 §5.2.2)",
+    supplementary: true,
     description:
       "Users should be blocked from accessing resources when the device type is unknown or unsupported. " +
       "This prevents attackers from spoofing user-agent strings to bypass platform-specific controls.",
@@ -952,10 +964,10 @@ export const CIS_CONTROLS: CISControl[] = [
     },
   },
   {
-    id: "5.3.12",
-    title: "Ensure device code flow is blocked",
+    id: "5.2.2.12",
+    title: "Ensure the device code sign-in flow is blocked",
     level: "L1",
-    section: "5.3 - Conditional Access",
+    section: "5.2.2 - Conditional Access",
     description:
       "Device code flow should be blocked to prevent device code phishing attacks where attackers trick users " +
       "into authenticating on their behalf. Exclude Teams Rooms / phone resource accounts if needed.",
@@ -981,10 +993,13 @@ export const CIS_CONTROLS: CISControl[] = [
           | { transferMethods?: string }
           | null
           | undefined;
+        const blocksDeviceCode =
+          authFlows?.transferMethods != null &&
+          authFlows.transferMethods.toLowerCase().includes("devicecodeflow");
         return (
           targetsAllUsers(p) &&
           hasGrantControl(p, "block") &&
-          authFlows?.transferMethods != null
+          blocksDeviceCode
         );
       });
 
@@ -1002,13 +1017,14 @@ export const CIS_CONTROLS: CISControl[] = [
     },
   },
   {
-    id: "5.3.13",
-    title: "Ensure sign-in frequency for admin portals is limited",
-    level: "L2",
-    section: "5.3 - Conditional Access",
+    id: "5.2.2.4",
+    title: "Ensure Sign-in frequency is enabled and browser sessions are not persistent for Administrative users",
+    level: "L1",
+    section: "5.2.2 - Conditional Access",
     description:
-      "Admin sessions should have a limited sign-in frequency (e.g., 4 hours or less) to reduce the window " +
-      "of opportunity if an admin session token is compromised.",
+      "Administrative sessions should enforce a limited sign-in frequency (e.g., 4 hours or less) AND have " +
+      "persistent browser sessions disabled ('Never persistent'). This reduces the window of opportunity if an " +
+      "admin session token is compromised and prevents tokens from surviving a browser restart on shared devices.",
     policyGuidance: {
       suggestedName: "YOURORG - APP - SESSION - AdminPortal-SIF(4Hours)",
       portalSteps: [
@@ -1046,13 +1062,14 @@ export const CIS_CONTROLS: CISControl[] = [
   },
 
   // ═══════════════════════════════════════════════════════════════════════
-  // Section 5.4 — Identity Protection & Device Controls
+  // Identity Protection, device & risk controls (CIS v7 §5.2.2)
   // ═══════════════════════════════════════════════════════════════════════
   {
     id: "5.4.1",
     title: "Ensure high-risk users are blocked",
     level: "L1",
-    section: "5.4 - Identity Protection",
+    section: "Supplementary - CA Hardening (not in CIS v7 §5.2.2)",
+    supplementary: true,
     licenseRequirement: "entraIdP2",
     description:
       "A CA policy should block access or require risk remediation for users with high user risk level. This ensures compromised accounts " +
@@ -1098,10 +1115,10 @@ export const CIS_CONTROLS: CISControl[] = [
     },
   },
   {
-    id: "5.4.2",
-    title: "Ensure high-risk sign-ins are blocked",
-    level: "L1",
-    section: "5.4 - Identity Protection",
+    id: "5.2.2.8",
+    title: "Ensure 'sign-in risk' is blocked for medium and high risk",
+    level: "L2",
+    section: "5.2.2 - Conditional Access",
     licenseRequirement: "entraIdP2",
     description:
       "A CA policy should block access for sign-ins with high risk level. High-risk sign-ins indicate " +
@@ -1144,10 +1161,10 @@ export const CIS_CONTROLS: CISControl[] = [
     },
   },
   {
-    id: "5.4.3",
-    title: "Ensure compliant device requirement is configured",
-    level: "L2",
-    section: "5.4 - Device Compliance",
+    id: "5.2.2.9",
+    title: "Ensure a managed device is required for authentication",
+    level: "L1",
+    section: "5.2.2 - Conditional Access",
     licenseRequirement: "intunePlan1",
     description:
       "A CA policy should require device compliance for accessing corporate resources, ensuring only healthy " +
@@ -1226,10 +1243,10 @@ export const CIS_CONTROLS: CISControl[] = [
     },
   },
   {
-    id: "5.4.4",
-    title: "Ensure token protection is configured for sensitive applications",
+    id: "5.2.2.16",
+    title: "Ensure Token Protection is enforced for session tokens",
     level: "L2",
-    section: "5.4 - Token Security",
+    section: "5.2.2 - Conditional Access",
     description:
       "Token protection (token binding) should be configured for Exchange Online, SharePoint Online, and Teams " +
       "to prevent token replay attacks. Only supported on Windows 10+ with supported applications.",
@@ -1276,10 +1293,190 @@ export const CIS_CONTROLS: CISControl[] = [
     },
   },
   {
+    id: "5.2.2.11",
+    title: "Ensure sign-in frequency for Intune Enrollment is set to 'Every time'",
+    level: "L1",
+    section: "5.2.2 - Conditional Access",
+    description:
+      "A CA policy must target the Microsoft Intune Enrollment resource and set sign-in frequency to 'Every time'. " +
+      "This forces fresh authentication during device enrollment, preventing a stolen or replayed token from being " +
+      "used to enrol an attacker-controlled device. Microsoft applies a five-minute clock skew when 'Every time' is set.",
+    policyGuidance: {
+      suggestedName: "YOURORG - APP - SESSION - IntuneEnrollment-SIF(EveryTime)",
+      portalSteps: [
+        { tab: "Name", instructions: ["Enter policy name: YOURORG - APP - SESSION - IntuneEnrollment-SIF(EveryTime)"] },
+        { tab: "Users", instructions: ["Include → All users", "Exclude → break-glass / emergency access accounts"] },
+        { tab: "Target resources", instructions: ["Resources (cloud apps) → Include → Select resources → Microsoft Intune Enrollment", "Note: if the app is missing, create the service principal for app ID d4ebce55-015a-49b5-a083-c84d1797ae8c"] },
+        { tab: "Session", instructions: ["Sign-in frequency → Every time"] },
+        { tab: "Enable policy", instructions: ["Set to Report-only first, verify enrollment still works, then switch to On"] },
+      ],
+    },
+    msLearnLinks: [
+      { label: "MS Learn: Require reauthentication every time", url: "https://learn.microsoft.com/entra/identity/conditional-access/policy-all-users-device-enrollment-reauth" },
+      { label: "MS Learn: Sign-in frequency", url: "https://learn.microsoft.com/entra/identity/conditional-access/concept-session-lifetime#user-sign-in-frequency" },
+    ],
+    check: (policies) => {
+      const INTUNE_ENROLLMENT_APP = "d4ebce55-015a-49b5-a083-c84d1797ae8c";
+      const matching = getEnabled(policies).filter((p) => {
+        const apps = p.conditions.applications.includeApplications.map((a) => a.toLowerCase());
+        const targetsIntune = apps.includes(INTUNE_ENROLLMENT_APP);
+        const sif = p.sessionControls?.signInFrequency;
+        const everyTime = sif?.isEnabled === true && sif.frequencyInterval === "everyTime";
+        return targetsIntune && everyTime;
+      });
+
+      return {
+        status: matching.length > 0 ? "pass" : "fail",
+        detail:
+          matching.length > 0
+            ? `Found ${matching.length} policy(ies) requiring 'Every time' sign-in for Intune Enrollment.`
+            : "No policy sets sign-in frequency to 'Every time' for the Microsoft Intune Enrollment resource.",
+        matchingPolicies: matching.map((p) => p.displayName),
+        remediation:
+          "Create a CA policy targeting All users → Microsoft Intune Enrollment resource with session control " +
+          "sign-in frequency set to 'Every time'. Exclude only break-glass accounts.",
+      };
+    },
+  },
+  {
+    id: "5.2.2.13",
+    title: "Ensure that periodic reauthentication is required for all users",
+    level: "L1",
+    section: "5.2.2 - Conditional Access",
+    description:
+      "A CA policy must enforce periodic reauthentication for all users with a sign-in frequency of 7 days or less. " +
+      "This limits how long a refresh token remains valid, reducing the window in which a stolen token can be replayed.",
+    policyGuidance: {
+      suggestedName: "YOURORG - GLOBAL - SESSION - PeriodicReauth(7Days)",
+      portalSteps: [
+        { tab: "Name", instructions: ["Enter policy name: YOURORG - GLOBAL - SESSION - PeriodicReauth(7Days)"] },
+        { tab: "Users", instructions: ["Include → All users", "Exclude → break-glass / emergency access accounts"] },
+        { tab: "Target resources", instructions: ["Resources (cloud apps) → Include → All resources (All cloud apps)"] },
+        { tab: "Session", instructions: ["Sign-in frequency → Periodic reauthentication → set to 7 days or less"] },
+        { tab: "Enable policy", instructions: ["Set to Report-only for at least one week, review impact, then switch to On"] },
+      ],
+    },
+    msLearnLinks: [
+      { label: "MS Learn: User sign-in frequency", url: "https://learn.microsoft.com/entra/identity/conditional-access/concept-session-lifetime#user-sign-in-frequency" },
+    ],
+    check: (policies) => {
+      const matching = getEnabled(policies).filter((p) => {
+        const sif = p.sessionControls?.signInFrequency;
+        if (!sif?.isEnabled || sif.value == null) return false;
+        if (sif.frequencyInterval === "everyTime") return false; // that is 5.2.2.11, not periodic
+        const minutes =
+          sif.type === "hours"
+            ? sif.value * 60
+            : sif.type === "days"
+              ? sif.value * 24 * 60
+              : sif.value;
+        const within7Days = minutes <= 7 * 24 * 60;
+        return targetsAllUsers(p) && targetsAllApps(p) && within7Days;
+      });
+
+      return {
+        status: matching.length > 0 ? "pass" : "fail",
+        detail:
+          matching.length > 0
+            ? `Found ${matching.length} policy(ies) enforcing periodic reauthentication (≤ 7 days) for all users.`
+            : "No policy enforces periodic reauthentication of 7 days or less for all users.",
+        matchingPolicies: matching.map((p) => p.displayName),
+        remediation:
+          "Create a CA policy targeting All users → All cloud apps with session control 'Periodic reauthentication' " +
+          "set to 7 days or less. Exclude only break-glass accounts.",
+      };
+    },
+  },
+  {
+    id: "5.2.2.14",
+    title: "Ensure trusted 'named locations' are defined",
+    level: "L2",
+    section: "5.2.2 - Conditional Access",
+    description:
+      "At least one trusted, IP-range named location should be defined. Trusted named locations underpin " +
+      "location-based Conditional Access (e.g. requiring MFA off-network) and reduce friction for known corporate egress IPs.",
+    policyGuidance: {
+      suggestedName: "Named location: Corporate IP ranges (trusted)",
+      portalSteps: [
+        { tab: "Named locations", instructions: ["Protection → Conditional Access → Named locations → IP ranges location"] },
+        { tab: "Configure", instructions: ["Enter a name (e.g. 'Corporate IP ranges')", "Add your egress IP ranges in CIDR notation", "Check 'Mark as trusted location'", "Click Create"] },
+      ],
+    },
+    msLearnLinks: [
+      { label: "MS Learn: Named locations", url: "https://learn.microsoft.com/entra/identity/conditional-access/concept-assignment-network" },
+    ],
+    check: (_policies, context) => {
+      const trusted = context.namedLocations.filter(
+        (loc) =>
+          loc.isTrusted === true &&
+          (loc["@odata.type"]?.toLowerCase().includes("ipnamedlocation") ||
+            (loc.ipRanges != null && loc.ipRanges.length > 0))
+      );
+
+      return {
+        status: trusted.length > 0 ? "pass" : "fail",
+        detail:
+          trusted.length > 0
+            ? `Found ${trusted.length} trusted IP-range named location(s): ${trusted.map((l) => l.displayName).join(", ")}.`
+            : "No trusted IP-range named location is defined in the tenant.",
+        matchingPolicies: trusted.map((l) => l.displayName),
+        remediation:
+          "Define at least one trusted IP-range named location: Protection → Conditional Access → Named locations → " +
+          "IP ranges location. Add your corporate egress CIDR ranges and check 'Mark as trusted location'.",
+      };
+    },
+  },
+  {
+    id: "5.2.2.17",
+    title: "Ensure authentication transfer is blocked",
+    level: "L1",
+    section: "5.2.2 - Conditional Access",
+    description:
+      "A CA policy must block the authentication transfer flow (e.g. QR-code hand-off of an authenticated session " +
+      "from desktop to mobile). Blocking it prevents an attacker from coercing a user into transferring a valid session.",
+    policyGuidance: {
+      suggestedName: "YOURORG - GLOBAL - BLOCK - AuthenticationTransfer",
+      portalSteps: [
+        { tab: "Name", instructions: ["Enter policy name: YOURORG - GLOBAL - BLOCK - AuthenticationTransfer"] },
+        { tab: "Users", instructions: ["Include → All users", "Exclude → break-glass / emergency access accounts"] },
+        { tab: "Target resources", instructions: ["Resources (cloud apps) → Include → All resources (All cloud apps)"] },
+        { tab: "Conditions", instructions: ["Authentication flows → Configure Yes → check 'Authentication transfer'"] },
+        { tab: "Grant", instructions: ["Block access"] },
+        { tab: "Enable policy", instructions: ["Set to Report-only first, then switch to On when ready"] },
+      ],
+    },
+    msLearnLinks: [
+      { label: "MS Learn: Authentication flows condition", url: "https://learn.microsoft.com/entra/identity/conditional-access/concept-conditional-access-conditions#authentication-flows" },
+    ],
+    check: (policies) => {
+      const matching = getEnabled(policies).filter((p) => {
+        const authFlows = (p.conditions as Record<string, unknown>)
+          .authenticationFlows as { transferMethods?: string } | null | undefined;
+        const blocksTransfer =
+          authFlows?.transferMethods != null &&
+          authFlows.transferMethods.toLowerCase().includes("authenticationtransfer");
+        return targetsAllUsers(p) && hasGrantControl(p, "block") && blocksTransfer;
+      });
+
+      return {
+        status: matching.length > 0 ? "pass" : "fail",
+        detail:
+          matching.length > 0
+            ? `Found ${matching.length} policy(ies) blocking the authentication transfer flow.`
+            : "No policy blocks the authentication transfer flow.",
+        matchingPolicies: matching.map((p) => p.displayName),
+        remediation:
+          'Create a CA policy targeting All users → All cloud apps with the authentication flow condition ' +
+          '"Authentication transfer" and grant control "Block access". Exclude only break-glass accounts.',
+      };
+    },
+  },
+  {
     id: "5.4.5",
     title: "Ensure app protection policy is required for mobile devices",
     level: "L2",
-    section: "5.4 - Mobile Security",
+    section: "Supplementary - CA Hardening (not in CIS v7 §5.2.2)",
+    supplementary: true,
     licenseRequirement: "intunePlan1",
     description:
       "A CA policy should require an Intune app protection policy for mobile device access, ensuring " +
@@ -1405,79 +1602,92 @@ export const CIS_CONTROLS: CISControl[] = [
     level: "L2",
     section: "1.3 - Session Timeout",
     description:
-      "A Conditional Access policy should enforce a sign-in frequency of 3 hours or less for unmanaged " +
-      "(non-compliant, non-Hybrid Azure AD joined) devices. This limits the idle session window, reducing " +
-      "the risk of session hijacking on devices the organization does not manage. The CIS benchmark " +
-      "recommends configuring both the Global Idle Session Timeout in Microsoft 365 admin settings AND " +
-      "a CA policy to enforce session limits on unmanaged devices.",
+      "CIS §1.3.2 is satisfied by TWO settings working together: (1) the Global Idle Session Timeout in the " +
+      "Microsoft 365 admin center set to 3 hours or less, AND (2) a Conditional Access policy with the " +
+      '"Use app enforced restrictions" session control targeting Office 365 with browser client apps. ' +
+      "App enforced restrictions is the mechanism that signals SharePoint/OWA to apply the idle timeout, and the " +
+      "app-enforced-restrictions protocol itself only applies the timeout to unmanaged (non-compliant, non-domain-joined) " +
+      "devices — managed devices with SSO are exempt. A sign-in-frequency policy scoped to unmanaged devices is " +
+      "accepted as an equivalent alternative. Note: the admin-center timeout value cannot be read via Graph, so this " +
+      "check verifies the Conditional Access half of the control.",
     policyGuidance: {
-      suggestedName: "YOURORG - GLOBAL - SESSION - IdleTimeout-Unmanaged(3Hours)",
+      suggestedName: "YOURORG - APP - SESSION - O365 - IdleTimeout-Unmanaged",
       portalSteps: [
-        { tab: "Name", instructions: ["Enter policy name: YOURORG - GLOBAL - SESSION - IdleTimeout-Unmanaged(3Hours)"] },
+        { tab: "Prerequisites", instructions: ["Microsoft 365 admin center → Settings → Org settings → Security & Privacy → Idle session timeout → turn on and set to 3 hours (or less)"] },
+        { tab: "Name", instructions: ["Enter policy name: YOURORG - APP - SESSION - O365 - IdleTimeout-Unmanaged"] },
         { tab: "Users", instructions: ["Include → All users", "Exclude → break-glass accounts"] },
-        { tab: "Target resources", instructions: ["Cloud apps → Include → All cloud apps"] },
-        {
-          tab: "Conditions",
-          instructions: [
-            "Filter for devices → Configure Yes → Exclude filtered devices from policy",
-            "Rule syntax: device.isCompliant -eq True -or device.trustType -eq \"ServerAD\"",
-            "(This scopes the policy to unmanaged devices by excluding compliant and Hybrid Azure AD joined devices)",
-          ],
-        },
-        { tab: "Session", instructions: ["Sign-in frequency → set to 3 hours", "Persistent browser session → set to 'Never persistent'"] },
+        { tab: "Target resources", instructions: ["Cloud apps → Include → Select apps → Office 365"] },
+        { tab: "Conditions", instructions: ["Client apps → Configure Yes → check Browser only (uncheck Mobile apps and desktop clients)"] },
+        { tab: "Session", instructions: ["Use app enforced restrictions → Enabled"] },
         { tab: "Enable policy", instructions: ["Set to Report-only first, verify user experience is acceptable, then switch to On"] },
       ],
     },
     msLearnLinks: [
-      { label: "MS Learn: Sign-in frequency & session lifetime", url: "https://learn.microsoft.com/entra/identity/conditional-access/concept-session-lifetime" },
       { label: "MS Learn: M365 idle session timeout", url: "https://learn.microsoft.com/microsoft-365/admin/manage/idle-session-timeout-web-apps" },
+      { label: "MS Learn: App enforced restrictions", url: "https://learn.microsoft.com/entra/identity/conditional-access/concept-conditional-access-session#application-enforced-restrictions" },
     ],
     check: (policies) => {
-      const matching = getEnabled(policies).filter((p) => {
+      const targetsOffice365 = (p: ConditionalAccessPolicy) =>
+        p.conditions.applications.includeApplications.some(
+          (a) => a.toLowerCase() === "office365"
+        );
+
+      // Primary CIS mechanism: "Use app enforced restrictions" on Office 365.
+      // The app-enforced-restrictions protocol itself differentiates managed vs
+      // unmanaged devices, so no device filter is required here.
+      const appEnforced = getEnabled(policies).filter((p) => {
+        const aer = p.sessionControls?.applicationEnforcedRestrictions?.isEnabled === true;
+        return aer && (targetsOffice365(p) || targetsAllApps(p)) && targetsAllUsers(p);
+      });
+
+      // Accepted alternative: a sign-in-frequency policy (≤ 3h) scoped to
+      // unmanaged devices.
+      const signInFreq = getEnabled(policies).filter((p) => {
         const sif = p.sessionControls?.signInFrequency;
         if (!sif?.isEnabled || sif.value == null) return false;
-
-        // Convert to minutes for comparison
         const minutes =
           sif.type === "hours"
             ? sif.value * 60
             : sif.type === "days"
               ? sif.value * 24 * 60
-              : sif.value; // assume minutes if unrecognised type
-
-        // Must be ≤ 180 minutes (3 hours)
+              : sif.value;
         if (minutes > 180) return false;
-
-        // Should target broadly — not just admin roles (that's 5.3.13)
         const broadTarget =
-          targetsAllUsers(p) ||
-          p.conditions.users.includeGroups.length > 0;
-
-        // Extra confidence if the policy scopes to unmanaged devices
+          targetsAllUsers(p) || p.conditions.users.includeGroups.length > 0;
         const hasDeviceFilter = p.conditions.devices?.deviceFilter != null;
-        const hasAppRestrictions =
-          p.sessionControls?.applicationEnforcedRestrictions?.isEnabled === true;
-        const hasPersistentBrowserNever =
+        const persistentNever =
           p.sessionControls?.persistentBrowser?.isEnabled === true &&
           p.sessionControls?.persistentBrowser?.mode === "never";
-
-        // Accept if broad target or device-filtered
-        return broadTarget || hasDeviceFilter || hasAppRestrictions || hasPersistentBrowserNever;
+        return broadTarget && (hasDeviceFilter || persistentNever);
       });
+
+      const matching = [...new Set([...appEnforced, ...signInFreq])];
+
+      const detailParts: string[] = [];
+      if (appEnforced.length > 0) {
+        detailParts.push(
+          `${appEnforced.length} policy(ies) use 'app enforced restrictions' on Office 365 (CIS-canonical idle-timeout mechanism)`
+        );
+      }
+      if (signInFreq.length > 0) {
+        detailParts.push(
+          `${signInFreq.length} policy(ies) enforce sign-in frequency ≤ 3h for unmanaged devices (accepted alternative)`
+        );
+      }
 
       return {
         status: matching.length > 0 ? "pass" : "fail",
         detail:
           matching.length > 0
-            ? `Found ${matching.length} policy(ies) enforcing session timeout ≤ 3 hours for unmanaged devices.`
-            : "No CA policy enforces idle session timeout of 3 hours or less for unmanaged devices.",
+            ? `${detailParts.join("; ")}. Confirm the Microsoft 365 admin-center Idle session timeout is also set to ≤ 3 hours (not readable via Graph).`
+            : "No CA policy applies app enforced restrictions on Office 365 (or a sign-in-frequency ≤ 3h policy for unmanaged devices).",
         matchingPolicies: matching.map((p) => p.displayName),
         remediation:
-          "Create a CA policy targeting all users → all cloud apps with session control " +
-          "sign-in frequency set to 3 hours or less. Scope to unmanaged devices using a device filter " +
-          '(exclude devices where device.isCompliant -eq True -or device.trustType -eq "ServerAD") ' +
-          "and set persistent browser to 'Never persistent'. Also configure the Global Idle Session " +
-          "Timeout in Microsoft 365 admin center → Org settings → Security & privacy → Idle session timeout.",
+          "Two parts are required for CIS §1.3.2: " +
+          "(1) Microsoft 365 admin center → Settings → Org settings → Security & Privacy → Idle session timeout → set to 3 hours or less; AND " +
+          '(2) a Conditional Access policy targeting All users → Office 365, Client apps = Browser only, Session = "Use app enforced restrictions", enabled. ' +
+          "App enforced restrictions automatically scopes the timeout to unmanaged devices. " +
+          "(Alternatively, a sign-in-frequency ≤ 3h policy scoped to unmanaged devices via a device filter is accepted.)",
       };
     },
   },
@@ -1554,16 +1764,21 @@ export function runCISAlignment(context: TenantContext): CISAlignmentResult {
     return { control, result };
   });
 
-  const passCount = results.filter((r) => r.result.status === "pass").length;
-  const failCount = results.filter((r) => r.result.status === "fail").length;
-  const manualCount = results.filter(
+  // Supplementary controls are extra CA hardening not part of the official
+  // CIS v7 §5.2.2 set — they are evaluated and shown, but excluded from the
+  // headline counts and the alignment score.
+  const official = results.filter((r) => !r.control.supplementary);
+
+  const passCount = official.filter((r) => r.result.status === "pass").length;
+  const failCount = official.filter((r) => r.result.status === "fail").length;
+  const manualCount = official.filter(
     (r) => r.result.status === "manual"
   ).length;
-  const notApplicableCount = results.filter(
+  const notApplicableCount = official.filter(
     (r) => r.result.status === "not-applicable"
   ).length;
 
-  const scorable = results.filter(
+  const scorable = official.filter(
     (r) => r.result.status !== "not-applicable" && r.result.status !== "manual"
   );
   const alignmentScore =
@@ -1577,8 +1792,8 @@ export function runCISAlignment(context: TenantContext): CISAlignmentResult {
     failCount,
     manualCount,
     notApplicableCount,
-    totalControls: CIS_CONTROLS.length,
+    totalControls: official.length,
     alignmentScore,
-    benchmarkVersion: "6.0.0",
+    benchmarkVersion: "7.0.0",
   };
 }

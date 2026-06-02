@@ -797,7 +797,7 @@ function checkUserAgentBypass(
           recommendation:
             "Change the platform condition to target \"All platforms\" instead of specific platforms, or " +
             "create a companion policy that blocks access from unknown/unsupported device platforms " +
-            "(CIS 5.3.11). This eliminates the user-agent spoofing bypass path.",
+            "(supplementary CA hardening). This eliminates the user-agent spoofing bypass path.",
         });
       }
     }
@@ -1203,16 +1203,20 @@ function checkGuestExternalUserExclusions(
   return findings;
 }
 
-// ─── Check: Credential Registration Constraints (May 2026) ────────────────────
-// Starting May 2026, CA policies targeting "Register security info" will now
-// be evaluated during Windows Hello for Business and macOS Platform SSO
-// credential provisioning. This check flags policies that may prevent users
-// from setting up new devices due to strict device compliance or location
-// requirements that cannot be satisfied during initial device setup.
+// ─── Check: Credential Registration Constraints (July 2026) ───────────────────
+// Per Microsoft Message Center post MC1326253, Conditional Access policies
+// scoped to "Register security info" will be evaluated during Windows Hello for
+// Business (WHfB) and macOS Platform SSO (PSSO) credential registration —
+// closing the gap where these flows previously enforced MFA but did NOT evaluate
+// registration-targeting CA policies (authentication strength, trusted
+// locations, other Grant controls). This check flags policies that may prevent
+// users from setting up new devices due to constraints that cannot be satisfied
+// during initial device setup.
 //
-// Reference: MC Post March 2026 - "Plan for change – Conditional Access 
-// enforcement during credential registration for Windows Hello for Business 
-// and macOS Platform SSO"
+// Rollout: gradual from July 6, 2026; complete for all tenants July 13, 2026.
+// Reference: MC1326253 - "Conditional Access policies now apply to Windows Hello
+// for Business and macOS Platform SSO registration".
+// https://learn.microsoft.com/entra/identity/conditional-access/policy-all-users-security-info-registration
 
 function checkCredentialRegistrationConstraints(
   policy: ConditionalAccessPolicy,
@@ -1298,7 +1302,42 @@ function checkCredentialRegistrationConstraints(
     );
   }
 
-  if (issues.length === 0) return findings;
+  // No blocking constraints detected — emit an informational finding so the
+  // policy still surfaces the MC1326253 change context and confirms it looks
+  // safe to apply during WHfB / macOS Platform SSO registration.
+  if (issues.length === 0) {
+    const stateNote =
+      policy.state === "enabledForReportingButNotEnforced"
+        ? `This policy is currently in **report-only** mode — switch it to **On** before July 6, 2026 if you want it enforced during registration.`
+        : `This policy is **enabled**, so it will begin applying during registration automatically as the rollout reaches your tenant.`;
+
+    findings.push({
+      id: nextFindingId(),
+      policyId: policy.id,
+      policyName: policy.displayName,
+      severity: "info",
+      category: "Credential Registration Constraints",
+      title: 'Targets "Register security info" — will apply to WHfB / Platform SSO registration (July 2026)',
+      description:
+        `**From July 6, 2026** (rollout complete July 13, 2026), this policy will be evaluated during Windows Hello for Business ` +
+        `and macOS Platform SSO credential registration — not just sign-in. Today these flows enforce MFA but do not evaluate your ` +
+        `registration-targeting Conditional Access policies; this change (Microsoft Message Center post **MC1326253**) closes that gap.\n\n` +
+        `**Good news:** this policy requires only **MFA / authentication strength** with no device-compliance, trusted-location, ` +
+        `approved/protected-app, or device-filter constraints — so it should **not** block users provisioning a new device. ` +
+        `This is the recommended configuration for a registration-targeting policy.\n\n` +
+        stateNote,
+      recommendation:
+        `No changes required. Before the rollout reaches your tenant (July 6–13, 2026):\n\n` +
+        `1. **Confirm the grant control is achievable on a new device** — e.g. a user enrolling WHfB can satisfy your ` +
+        `authentication strength (FIDO2 key, Authenticator push, or a Temporary Access Pass) without already holding the ` +
+        `credential they're about to register.\n\n` +
+        `2. **Keep it free of device/location constraints** — adding device compliance or a trusted-location requirement here ` +
+        `would block first-time setup from new or remote devices.\n\n` +
+        `3. **Update helpdesk docs** — users may see a new authentication prompt during device setup.\n\n` +
+        `Reference: MC1326253 / [Require MFA for security info registration](https://learn.microsoft.com/entra/identity/conditional-access/policy-all-users-security-info-registration).`,
+    });
+    return findings;
+  }
 
   // Determine severity based on how likely this is to block legitimate enrollment
   let severity: Severity = "medium";
@@ -1312,17 +1351,18 @@ function checkCredentialRegistrationConstraints(
     policyName: policy.displayName,
     severity,
     category: "Credential Registration Constraints",
-    title: "Policy may block Windows Hello / Platform SSO setup on new devices (May 2026 enforcement)",
+    title: "Policy may block Windows Hello / Platform SSO setup on new devices (July 2026 enforcement)",
     description:
-      `**Starting May 2026**, this policy will be enforced during Windows Hello for Business and macOS Platform SSO ` +
-      `credential registration (not just sign-in). This policy has the following constraints that may prevent ` +
-      `users from completing device setup:\n\n` +
+      `**From July 6, 2026** (rollout complete July 13, 2026), this policy will be enforced during Windows Hello for Business and macOS Platform SSO ` +
+      `credential registration — not just sign-in. Today these flows enforce MFA but do not evaluate your ` +
+      `registration-targeting Conditional Access policies; this change closes that gap. This policy has the following ` +
+      `constraints that may prevent users from completing device setup:\n\n` +
       issues.map((i) => `• ${i}`).join("\n") +
       `\n\n` +
       `When users provision WHfB on a new laptop or register macOS Platform SSO credentials for the first time, ` +
       `they may not be able to satisfy these requirements. This can block legitimate enrollment flows. ` +
-      `Per Microsoft's Message Center post (MC March 2026), admins should review policies targeting "Register security info" ` +
-      `before enforcement begins in late April 2026.`,
+      `Per Microsoft's Message Center post (MC1326253), admins should review policies targeting "Register security info" ` +
+      `and test with report-only mode before the rollout reaches their tenant (July 6–13, 2026).`,
     recommendation:
       requiresCompliance
         ? `**High Priority**: Remove device compliance requirements from this policy or add exclusions for users ` +
@@ -1331,7 +1371,7 @@ function checkCredentialRegistrationConstraints(
           `registration (requiring only MFA + phishing-resistant authentication)\n\n` +
           `2. **Temporary Access Pass (TAP)**: Use TAP for new device enrollment flows, excluded from this policy\n\n` +
           `3. **Location bypass**: Allow registration from trusted corporate networks only (where IT can assist)\n\n` +
-          `4. **Report-only mode**: Enable report-only mode BEFORE May 2026 to see impact without blocking users\n\n` +
+          `4. **Report-only mode**: Enable report-only mode BEFORE July 6, 2026 to see impact without blocking users\n\n` +
           `Recommended grant controls for registration policies: MFA + authentication strength (phishing-resistant) ` +
           `— avoid device compliance/location requirements.`
         : hasLocationConditions
@@ -1339,11 +1379,11 @@ function checkCredentialRegistrationConstraints(
           `1. Allow "All locations" for registration (even if blocking specific locations for sign-in)\n\n` +
           `2. Include "MFA Trusted IPs" or home office locations in allowed locations\n\n` +
           `3. Create a separate policy for registration with relaxed location requirements\n\n` +
-          `4. Use report-only mode before May 2026 to identify affected users\n\n` +
+          `4. Use report-only mode before July 6, 2026 to identify affected users\n\n` +
           `Remember: MFA is still required by default for ALL passwordless credential registration (WHfB, ` +
           `Platform SSO, passkeys) even without CA policies.`
         : `Review this policy's device filter and app requirements to ensure they don't block legitimate ` +
-          `credential registration flows. Test with report-only mode before May 2026 enforcement. ` +
+          `credential registration flows. Test with report-only mode before July 6, 2026 enforcement. ` +
           `Per Microsoft guidance: ensure users setting up new devices can satisfy policy requirements, ` +
           `or add exclusions/adjust conditions for the registration flow.`,
   });
@@ -2258,7 +2298,7 @@ function checkTenantWideGaps(context: TenantContext): Finding[] {
         "unrecognized user-agent to bypass MFA entirely.",
       recommendation:
         "Either change all MFA policies to target 'All platforms' (recommended), or create a " +
-        "companion policy that blocks access from unknown/unsupported device platforms per CIS 5.3.11. " +
+        "companion policy that blocks access from unknown/unsupported device platforms (supplementary CA hardening). " +
         "This closes the user-agent spoofing bypass path that MFASweep exploits.",
     });
   }
