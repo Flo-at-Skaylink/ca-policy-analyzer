@@ -2065,7 +2065,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
   // ═══════════════════════════════════════════════════════════════════════
   {
     id: "lb-ca01-mfa-all-users",
-    displayName: "LB - CA01 - MFA - All Users - All Resources",
+    displayName: "CA01: MFA all users all resources",
     category: "lewis-barry",
     controlType: "GRANT",
     priority: "critical",
@@ -2104,7 +2104,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
   },
   {
     id: "lb-ca02-block-legacy-auth",
-    displayName: "LB - CA02 - Block Legacy Authentication",
+    displayName: "CA02: Block Legacy Auth",
     category: "lewis-barry",
     controlType: "BLOCK",
     priority: "critical",
@@ -2143,7 +2143,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
   },
   {
     id: "lb-ca03-block-unsupported-os",
-    displayName: "LB - CA03 - Block Unsupported OS Types",
+    displayName: "CA03: Block Unsupported OS Types",
     category: "lewis-barry",
     controlType: "BLOCK",
     priority: "critical",
@@ -2186,7 +2186,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
   },
   {
     id: "lb-ca04-require-app-protection-mobile",
-    displayName: "LB - CA04 - Require App Protection Policy (Mobile)",
+    displayName: "CA04: Require App Protection (mobile)",
     category: "lewis-barry",
     controlType: "GRANT",
     priority: "critical",
@@ -2230,7 +2230,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
   },
   {
     id: "lb-ca05-require-compliant-desktop",
-    displayName: "LB - CA05 - Require Compliant Device (Desktop)",
+    displayName: "CA05: Require Compliant Desktop",
     category: "lewis-barry",
     controlType: "GRANT",
     priority: "critical",
@@ -2274,7 +2274,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
   },
   {
     id: "lb-ca06-block-device-code-flow",
-    displayName: "LB - CA06 - Block Device Code Flow",
+    displayName: "CA06: Block Code Flow",
     category: "lewis-barry",
     controlType: "BLOCK",
     priority: "critical",
@@ -2314,7 +2314,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
   },
   {
     id: "lb-ca07-signin-risk-mfa",
-    displayName: "LB - CA07 - Sign-In Risk Medium/High - Require MFA",
+    displayName: "CA07: Sign In Risk - Medium/High - MFA",
     category: "lewis-barry",
     controlType: "GRANT",
     priority: "critical",
@@ -2365,7 +2365,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
   },
   {
     id: "lb-ca08-user-risk-password-change",
-    displayName: "LB - CA08 - User Risk High - Require Password Change",
+    displayName: "CA08: User Risk - High - Reset PW",
     category: "lewis-barry",
     controlType: "GRANT",
     priority: "critical",
@@ -2416,7 +2416,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
   },
   {
     id: "lb-ca09-windows-token-protection",
-    displayName: "LB - CA09 - Windows Token Protection",
+    displayName: "CA09: Windows Token Protection",
     category: "lewis-barry",
     controlType: "SESSION",
     priority: "recommended",
@@ -2469,7 +2469,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
   },
   {
     id: "lb-ca10-breakglass-fido2",
-    displayName: "LB - CA10 - Breakglass - Require FIDO2",
+    displayName: "CA10: Breakglass Require FIDO2",
     category: "lewis-barry",
     controlType: "GRANT",
     priority: "critical",
@@ -2513,7 +2513,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
   },
   {
     id: "lb-ca11-block-security-info-outside-countries",
-    displayName: "LB - CA11 - Block Security Info Registration Outside Operating Countries",
+    displayName: "CA11: Register Security info only in operating countries",
     category: "lewis-barry",
     controlType: "BLOCK",
     priority: "recommended",
@@ -2557,7 +2557,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
   },
   {
     id: "lb-ca11b-require-tap-security-info",
-    displayName: "LB - CA11B - Require TAP for Security Info Registration",
+    displayName: "CA11B: Require TAP for Security Info Registration",
     category: "lewis-barry",
     controlType: "GRANT",
     priority: "recommended",
@@ -2603,7 +2603,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
   },
   {
     id: "lb-ca12-block-auth-transfer",
-    displayName: "LB - CA12 - Block Authentication Transfer Flows",
+    displayName: "CA12: Block Authentication Transfer Flows",
     category: "lewis-barry",
     controlType: "BLOCK",
     priority: "recommended",
