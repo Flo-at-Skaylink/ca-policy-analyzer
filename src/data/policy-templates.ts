@@ -71,6 +71,8 @@ export interface TemplateFingerprint {
   signInRiskLevels?: string[];
   /** Session control signatures */
   sessionSignInFrequency?: boolean;
+  /** True when the template requires frequencyInterval === 'everyTime' (vs time-based) */
+  sessionSignInFrequencyEveryTime?: boolean;
   sessionPersistentBrowser?: boolean;
   sessionCloudAppSecurity?: boolean;
   /** Platform conditions */
@@ -1334,6 +1336,54 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
         persistentBrowser: {
           isEnabled: true,
           mode: "never",
+        },
+      },
+    },
+  },
+
+  {
+    id: "intune-session-enrollment-sif-everytime",
+    displayName: "INTUNE - SESSION - Intune Enrollment SIF (Every Time)",
+    category: "intune",
+    controlType: "SESSION",
+    priority: "recommended",
+    summary:
+      "Require fresh authentication every time for Microsoft Intune Enrollment",
+    rationale:
+      "Device enrollment is a privileged, infrequent action. Requiring full reauthentication at enrollment time prevents a stolen or replayed token from being used to enrol an attacker-controlled device into your Intune tenant. Microsoft applies a five-minute clock skew so users are not prompted more than once every five minutes. This is the Microsoft-recommended pattern for securing sensitive user actions and satisfies CIS v7 §5.2.2.11.",
+    cisControls: ["5.2.2.11"],
+    fingerprint: {
+      includeApps: ["d4ebce55-015a-49b5-a083-c84d1797ae8c"],
+      targetsAllUsers: true,
+      clientAppTypes: ["all"],
+      sessionSignInFrequencyEveryTime: true,
+    },
+    deploymentJson: {
+      displayName: "YOURORG - APP - SESSION - IntuneEnrollment-SIF(EveryTime)",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: ["All"],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: ["d4ebce55-015a-49b5-a083-c84d1797ae8c"],
+          excludeApplications: [],
+          includeUserActions: [],
+        },
+        clientAppTypes: ["all"],
+      },
+      sessionControls: {
+        signInFrequency: {
+          isEnabled: true,
+          value: null,
+          type: null,
+          frequencyInterval: "everyTime",
+          authenticationType: "primaryAndSecondaryAuthentication",
         },
       },
     },

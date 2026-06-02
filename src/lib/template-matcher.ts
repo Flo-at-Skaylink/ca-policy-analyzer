@@ -316,7 +316,17 @@ function scorePolicyMatch(
  }
 
  // ── Session controls (weight: 10) ──────────────────────────────────
- if (fingerprint.sessionSignInFrequency) {
+ if (fingerprint.sessionSignInFrequencyEveryTime) {
+ totalWeight += 10;
+ const sif = session?.signInFrequency;
+ if (sif?.isEnabled && sif.frequencyInterval === "everyTime") {
+ matchedWeight += 10;
+ } else if (sif?.isEnabled) {
+ differences.push("Session: template requires sign-in frequency 'Every time', policy uses time-based interval");
+ } else {
+ differences.push("Session: template requires sign-in frequency 'Every time', not configured");
+ }
+ } else if (fingerprint.sessionSignInFrequency) {
  totalWeight += 10;
  if (session?.signInFrequency?.isEnabled) {
  matchedWeight += 10;
