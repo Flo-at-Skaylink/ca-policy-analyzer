@@ -1104,56 +1104,6 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
     },
   },
   {
-    id: "intune-grant-mobile-access",
-    displayName: "INTUNE - GRANT - Mobile Device Access Requirements",
-    category: "intune",
-    controlType: "GRANT",
-    priority: "recommended",
-    summary:
-      "Require compliant device or app protection policy for mobile access to Office 365",
-    rationale:
-      "For mobile devices, requiring either device compliance OR an app protection policy enables BYOD scenarios while maintaining data protection on iOS and Android.",
-    licenseRequirement: "intunePlan1",
-    fingerprint: {
-      includeApps: ["Office365"],
-      grantControls: ["compliantDevice", "compliantApplication"],
-      grantOperator: "OR",
-      targetsAllUsers: true,
-      clientAppTypes: ["mobileAppsAndDesktopClients"],
-      platforms: { include: ["android", "iOS"], exclude: [] },
-    },
-    deploymentJson: {
-      displayName:
-        "YOURORG - INTUNE - GRANT - Mobile Device Access Requirements",
-      state: "disabled",
-      conditions: {
-        users: {
-          includeUsers: ["All"],
-          excludeUsers: [],
-          includeGroups: [],
-          excludeGroups: [],
-          includeRoles: [],
-          excludeRoles: [],
-        },
-        applications: {
-          includeApplications: ["Office365"],
-          excludeApplications: ["0000000a-0000-0000-c000-000000000000"],
-          includeUserActions: [],
-        },
-        clientAppTypes: ["mobileAppsAndDesktopClients"],
-        platforms: {
-          includePlatforms: ["android", "iOS"],
-          excludePlatforms: [],
-        },
-      },
-      grantControls: {
-        operator: "OR",
-        builtInControls: ["compliantDevice", "compliantApplication"],
-      },
-    },
-  },
-
-  {
     id: "intune-block-compliant-nontrusted",
     displayName: "INTUNE - BLOCK - RequireCompliantDevice - NonTrustedLocations",
     category: "intune",
