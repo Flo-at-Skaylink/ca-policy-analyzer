@@ -586,6 +586,28 @@ export function TemplatesView({
         : m.template.category === categoryFilter
     );
 
+  // Compute display metrics for the active baseline (ignoring status filter)
+  const baselineMatches = result.matches.filter((m) =>
+    categoryFilter === null
+      ? m.template.category !== "lewis-barry"
+      : m.template.category === categoryFilter
+  );
+  const displayNA = baselineMatches.filter((m) => m.status === "not-applicable").length;
+  const displayApplicable = baselineMatches.filter((m) => m.status !== "not-applicable");
+  const displayTotal = baselineMatches.length;
+  const displayPresent = displayApplicable.filter((m) => m.status === "present").length;
+  const displayPartial = displayApplicable.filter((m) => m.status === "partial").length;
+  const displayMissing = displayApplicable.filter((m) => m.status === "missing").length;
+  const priorityWeights: Record<string, number> = { critical: 3, recommended: 2, optional: 1 };
+  let dispTotal = 0; let dispEarned = 0;
+  for (const m of displayApplicable) {
+    const w = priorityWeights[m.template.priority] ?? 1;
+    dispTotal += w;
+    if (m.status === "present") dispEarned += w;
+    else if (m.status === "partial") dispEarned += w * 0.5;
+  }
+  const displayScore = dispTotal > 0 ? Math.round((dispEarned / dispTotal) * 100) : 0;
+
   // Group by category
   const categories = [
     ...new Set(result.matches.map((m) => m.template.category)),
@@ -626,31 +648,31 @@ export function TemplatesView({
       {/* Summary Header */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Card className="flex flex-col items-center justify-center p-6 sm:col-span-2">
-          <ScoreRing score={result.coverageScore} />
+          <ScoreRing score={displayScore} />
           <p className="mt-3 text-sm text-gray-400">Template Coverage</p>
           <p className="text-xs text-gray-600">
-            Based on {result.totalTemplates - result.notApplicableCount} applicable policies
-            {result.notApplicableCount > 0 && (
-              <span> ({result.notApplicableCount} excluded — license N/A)</span>
+            Based on {displayTotal - displayNA} applicable policies
+            {displayNA > 0 && (
+              <span> ({displayNA} excluded — license N/A)</span>
             )}
           </p>
         </Card>
 
         <Card className="flex flex-col items-center justify-center p-4">
           <div className="text-3xl font-bold text-emerald-400">
-            {result.presentCount}
+            {displayPresent}
           </div>
           <div className="text-xs text-gray-400 mt-1">Present</div>
         </Card>
         <Card className="flex flex-col items-center justify-center p-4">
           <div className="text-3xl font-bold text-amber-400">
-            {result.partialCount}
+            {displayPartial}
           </div>
           <div className="text-xs text-gray-400 mt-1">Partial</div>
         </Card>
         <Card className="flex flex-col items-center justify-center p-4">
           <div className="text-3xl font-bold text-red-400">
-            {result.missingCount}
+            {displayMissing}
           </div>
           <div className="text-xs text-gray-400 mt-1">Missing</div>
         </Card>
