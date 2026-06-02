@@ -272,6 +272,10 @@ function policyPersonas(p: ConditionalAccessPolicy): Set<Persona> {
   const out = new Set<Persona>();
   const named = detectPersona(p.displayName);
   if (named !== "unknown") out.add(named);
+  // A general service-account policy (corpserviceaccounts) also covers the
+  // Microsoft 365 Service Accounts persona — both need the same network
+  // restriction control and a single "ServiceAccounts" policy satisfies both.
+  if (named === "corpserviceaccounts") out.add("microsoft365serviceaccounts");
 
   const users = p.conditions.users;
   const includesAllUsers = users.includeUsers.includes("All");
