@@ -543,24 +543,27 @@ export function analyzeTemplates(
  };
  });
 
- const presentCount = matches.filter((m) => m.status === "present").length;
- const partialCount = matches.filter((m) => m.status === "partial").length;
- const missingCount = matches.filter((m) => m.status === "missing").length;
- const notApplicableCount = matches.filter(
- (m) => m.status === "not-applicable"
- ).length;
+// lewis-barry templates are a supplemental baseline view — excluded from scoring
+  const scoredMatches = matches.filter((m) => m.template.category !== "lewis-barry");
 
- // Weighted coverage score (critical templates count more)
- // Not-applicable templates are excluded from the denominator
- const priorityWeights: Record<TemplatePriority, number> = {
- critical: 3,
- recommended: 2,
- optional: 1,
- };
+  const presentCount = scoredMatches.filter((m) => m.status === "present").length;
+  const partialCount = scoredMatches.filter((m) => m.status === "partial").length;
+  const missingCount = scoredMatches.filter((m) => m.status === "missing").length;
+  const notApplicableCount = scoredMatches.filter(
+    (m) => m.status === "not-applicable"
+  ).length;
 
- let totalWeight = 0;
- let earnedWeight = 0;
- for (const match of matches) {
+  // Weighted coverage score (critical templates count more)
+  // Not-applicable templates are excluded from the denominator
+  const priorityWeights: Record<TemplatePriority, number> = {
+    critical: 3,
+    recommended: 2,
+    optional: 1,
+  };
+
+  let totalWeight = 0;
+  let earnedWeight = 0;
+  for (const match of scoredMatches) {
  if (match.status === "not-applicable") continue; // skip unlicensed
  const w = priorityWeights[match.template.priority];
  totalWeight += w;
@@ -597,7 +600,7 @@ export function analyzeTemplates(
  partialCount,
  missingCount,
  notApplicableCount,
- totalTemplates: templates.length,
+ totalTemplates: templates.filter((t) => t.category !== "lewis-barry").length,
  coverageScore,
  byCategoryScore,
  };
