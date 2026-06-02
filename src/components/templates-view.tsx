@@ -153,6 +153,16 @@ function TemplateCard({ match }: { match: TemplateMatch }) {
             <p className="text-sm text-gray-300">{t.rationale}</p>
           </div>
 
+          {/* Prerequisites */}
+          {t.prerequisites && (
+            <div className="rounded border border-amber-500/20 bg-amber-500/5 px-3 py-2">
+              <h5 className="text-xs font-medium text-amber-400 uppercase mb-1">
+                ⚠ Prerequisites
+              </h5>
+              <p className="text-xs text-amber-200/80">{t.prerequisites}</p>
+            </div>
+          )}
+
           {/* CIS Mapping */}
           {t.cisControls && t.cisControls.length > 0 && (
             <div>

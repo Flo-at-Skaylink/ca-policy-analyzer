@@ -284,8 +284,14 @@ async function fetchJsonFiles(
       (f) => f.type === "file" && f.name.endsWith(".json")
     );
 
-    // Also recurse into subdirectories to find JSON files
-    const dirs = items.filter((f) => f.type === "dir");
+    // Also recurse into subdirectories to find JSON files,
+    // but skip folders that are clearly test/scratch folders
+    const EXCLUDED_DIR_NAMES = new Set(["test", "tests", "scratch", "temp", "tmp"]);
+    const dirs = items.filter(
+      (f) =>
+        f.type === "dir" &&
+        !EXCLUDED_DIR_NAMES.has(f.name.toLowerCase())
+    );
     for (const dir of dirs) {
       const subResult = await fetchJsonFiles(owner, repo, dir.path, branch);
       jsonFiles.push(...subResult.files);
