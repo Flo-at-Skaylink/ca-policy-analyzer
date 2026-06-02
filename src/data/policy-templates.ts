@@ -1064,48 +1064,6 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
   // INTUNE POLICIES
   // ═══════════════════════════════════════════════════════════════════════
   {
-    id: "intune-grant-mobile-desktop",
-    displayName: "INTUNE - GRANT - Mobile Apps and Desktop Clients",
-    category: "intune",
-    controlType: "GRANT",
-    priority: "recommended",
-    summary: "Require compliant device for mobile apps and desktop clients",
-    rationale:
-      "Requiring device compliance for thick clients ensures that only managed, healthy devices can access organizational resources through native apps.",
-    licenseRequirement: "intunePlan1",
-    fingerprint: {
-      includeApps: ["All"],
-      grantControls: ["compliantDevice"],
-      targetsAllUsers: true,
-      clientAppTypes: ["mobileAppsAndDesktopClients"],
-    },
-    deploymentJson: {
-      displayName:
-        "YOURORG - INTUNE - GRANT - Mobile Apps and Desktop Clients",
-      state: "disabled",
-      conditions: {
-        users: {
-          includeUsers: ["All"],
-          excludeUsers: [],
-          includeGroups: [],
-          excludeGroups: [],
-          includeRoles: [],
-          excludeRoles: [],
-        },
-        applications: {
-          includeApplications: ["All"],
-          excludeApplications: [],
-          includeUserActions: [],
-        },
-        clientAppTypes: ["mobileAppsAndDesktopClients"],
-      },
-      grantControls: {
-        operator: "OR",
-        builtInControls: ["compliantDevice"],
-      },
-    },
-  },
-  {
     id: "intune-block-compliant-nontrusted",
     displayName: "INTUNE - BLOCK - RequireCompliantDevice - NonTrustedLocations",
     category: "intune",
