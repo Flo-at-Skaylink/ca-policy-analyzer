@@ -27,10 +27,6 @@ The app runs **100% in your browser** — your data never leaves your machine. I
 
 > Full version history lives in [CHANGELOG.md](CHANGELOG.md).
 
-### v1.16 *(upcoming)*
-
----
-
 ### v1.15 — Lewis Barry Baseline, Policy Fixes & Improvements (June 2, 2026)
 
 **Major additions & changes across v1.15.x:**
