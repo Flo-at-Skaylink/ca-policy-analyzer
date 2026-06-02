@@ -1012,45 +1012,6 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
     },
   },
   {
-    id: "app-block-o365-nonworkinghours",
-    displayName: "O365 - BLOCK - NonWorkingHours",
-    category: "app-specific",
-    controlType: "BLOCK",
-    priority: "optional",
-    summary:
-      "Block access to Office 365 outside of standard working hours",
-    rationale:
-      "Restricting O365 access to business hours (e.g., Mon–Fri 9 AM–5 PM) reduces the window for after-hours attacks and limits data exfiltration outside normal operations.",
-    fingerprint: {
-      includeApps: ["Office365"],
-      grantControls: ["block"],
-    },
-    deploymentJson: {
-      displayName: "YOURORG - O365 - BLOCK - NonWorkingHours",
-      state: "disabled",
-      conditions: {
-        users: {
-          includeUsers: ["All"],
-          excludeUsers: [],
-          includeGroups: [],
-          excludeGroups: [],
-          includeRoles: [],
-          excludeRoles: [],
-        },
-        applications: {
-          includeApplications: ["Office365"],
-          excludeApplications: [],
-          includeUserActions: [],
-        },
-        clientAppTypes: ["all"],
-      },
-      grantControls: {
-        operator: "OR",
-        builtInControls: ["block"],
-      },
-    },
-  },
-  {
     id: "baseline-block-countries-noexclusions",
     displayName: "GLOBAL - BLOCK - Countries-NotAllowed - NoExclusions",
     category: "baseline",
