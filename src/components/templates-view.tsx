@@ -785,7 +785,7 @@ export function TemplatesView({
                 }
                 className="rounded-md border border-gray-700 bg-gray-800 px-2.5 py-1.5 text-xs text-gray-200 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
-                <option value="">🏠 Jon Hope — My Baseline (default)</option>
+                <option value="">🏠 Jon Hope - Baseline</option>
                 <option value="lewis-barry">🧰 Lewis Barry - Baseline</option>
               </select>
               {categoryFilter === "lewis-barry" && (
