@@ -5,6 +5,97 @@ All notable changes to the CA Policy Analyzer will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.20] - 2026-06-02
+
+### Changed
+
+- **Template Coverage header updates dynamically per selected baseline** — score ring, Present/Partial/Missing counts, and the applicable-policies subtitle now recalculate live based on whichever baseline is selected in the dropdown. Selecting **Lewis Barry - Baseline** shows scores and counts scoped to his 13 templates; switching back to **Jon Hope - Baseline** restores the original tenant-wide score.
+
+## [1.15.19] - 2026-06-02
+
+### Changed
+
+- **Dropdown labels standardised** — both options now follow the same pattern: `🏠 Jon Hope - Baseline` and `🧰 Lewis Barry - Baseline`.
+
+## [1.15.18] - 2026-06-02
+
+### Changed
+
+- **Lewis Barry template display names updated to match conditionalaccess.uk exactly** — all 13 templates renamed from the `LB - CA0X - ...` convention to the exact names on the site (e.g. `CA01: MFA all users all resources`, `CA02: Block Legacy Auth`, `CA06: Block Code Flow`, `CA08: User Risk - High - Reset PW`).
+
+## [1.15.17] - 2026-06-02
+
+### Fixed
+
+- **Lewis Barry templates excluded from coverage score and counts** — `lewis-barry` category templates are now filtered out of `presentCount`, `partialCount`, `missingCount`, `totalTemplates`, and the weighted `coverageScore` in [src/lib/template-matcher.ts](src/lib/template-matcher.ts). They are a supplemental view only and must not affect the main tenant score.
+
+### Changed
+
+- **Built-in baselines dropdown default** — first option is now `🏠 Jon Hope - Baseline` (default); `🧰 Lewis Barry - Baseline` is the second option.
+
+## [1.15.16] - 2026-06-02
+
+### Changed
+
+- **Lewis Barry templates hidden from main template list** — excluded from the default view and only shown when the dropdown is set to that baseline.
+- **Built-in baselines UI changed to `<select>` dropdown** — replaces the toggle button. Selecting Lewis Barry filters the list and shows a "Clear" link.
+- **Renamed to "Lewis Barry - Baseline"** — updated in `CATEGORY_META`, dropdown, and description.
+
+## [1.15.15] - 2026-06-02
+
+### Added
+
+- **Lewis Barry built-in baseline — 13 templates** (`CA01`–`CA12` + `CA11B`) sourced from [conditionalaccess.uk](https://conditionalaccess.uk/blog/some-policies-i-use-in-conditional-access/) by Lewis Barry (Microsoft MVP). New `"lewis-barry"` `TemplateCategory` with `CATEGORY_META` entry (`🧰`). All templates carry a `prerequisites` field crediting Lewis with a link to his article.
+- **`DeploymentPolicy.grantControls` extended** — added optional `authenticationStrength?: { id: string; displayName?: string }` for CA10 (FIDO2) and CA11B (TAP).
+
+## [1.15.14] - 2026-06-02
+
+### Removed
+
+- **`intune-grant-mobile-desktop` template removed** — redundant with the separate `intune-grant-mobile` and `intune-grant-desktop` templates; caused duplicate matches and inflated coverage counts.
+
+## [1.15.13] - 2026-06-02
+
+### Fixed
+
+- **`INTUNE - GRANT - Require App Protection (Mobile)` fingerprint fixed** — was cross-matching the compliant-device template. Now checks `builtInControls` for `"compliantApplication"` (weight 25) with a negative signal (weight −20) when `"compliantDevice"` is present without `"compliantApplication"`.
+
+## [1.15.12] - 2026-06-02
+
+### Added
+
+- **`ZTCA - BLOCK - AuthTransfer` template** — covers policies that block the `authenticationTransfer` authentication flow.
+
+## [1.15.11] - 2026-06-02
+
+### Fixed
+
+- **`ZTCA - BLOCK - DeviceCodeFlow` fingerprint no longer matches auth-transfer policies** — added explicit `deviceCodeFlow` assertion (weight 30) and a negative signal (weight −25) when `authenticationTransfer` is present without `deviceCodeFlow`.
+
+## [1.15.10] - 2026-06-02
+
+### Fixed
+
+- **`AGENT - BLOCK - NonTrustedAgents` fingerprint corrected** — was checking `includeUsers: ["All"]` but the real policy uses `includeUsers: ["None"]` with scoping via `clientApplications`. Fixed fingerprint and deployment JSON.
+
+## [1.15.9] - 2026-06-02
+
+### Fixed
+
+- **`P2 - USER RISK` template no longer cross-matches sign-in risk policy** — added `userRiskLevels` check (weight 30) with mutual negative signals between user-risk and sign-in risk templates.
+
+## [1.15.8] - 2026-06-02
+
+### Fixed
+
+- **`AGENT - BLOCK - NonTrustedAgents` deployment JSON corrected** — `grantControls` was `null`; updated to `{ operator: "OR", builtInControls: ["block"] }`.
+
+## [1.15.7] - 2026-06-02
+
+### Fixed
+
+- **`P2 - SIGN-IN RISK` fingerprint corrected** — was missing the `signInRiskLevels` check entirely, causing it to match the user-risk policy at higher confidence. Added `signInRiskLevels: ["high", "medium"]` (weight 30) with a negative signal when `userRiskLevels` is present without `signInRiskLevels`.
+
 ## [1.15.6] - 2026-06-02
 
 ### Fixed

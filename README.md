@@ -25,24 +25,24 @@ The app runs **100% in your browser** — your data never leaves your machine. I
 
 ## Recent Changes
 
-> Only the **5 most recent releases** are summarized here. Full version history lives in [CHANGELOG.md](CHANGELOG.md).
+> Full version history lives in [CHANGELOG.md](CHANGELOG.md).
 
-### v1.15.6 — App exclusion count includes unrecognized app IDs (June 2, 2026)
-- **Fixed finding title showing fewer excluded apps than the policy actually had** — `checkServicePrincipalExclusions` in [src/lib/analyzer.ts](src/lib/analyzer.ts) silently dropped any excluded app ID not found in the service principal map, `CA_BYPASS_APPS`, or `APP_DESCRIPTION_MAP`, causing the finding title to report fewer apps than the policy actually excluded (e.g. "4 app(s) excluded" when the policy had 5). The guard was removed so every excluded app ID is always counted; unresolved IDs fall back to the raw app ID as display name with a purpose of "Unrecognized app ID — not found in service principal list or known app catalog."
+### v1.16 *(upcoming)*
 
-### v1.15.5 — Agent identity template corrected for Graph API preview fields (June 2, 2026)
-- **`AGENT - BLOCK - HighRiskAgents` was matching wrong policies at 71%** — the fingerprint incorrectly checked `signInRiskLevels: ["high"]`. The real Graph API field for agent CA policies is `conditions.agentIdRiskLevels: "high"` (a preview string field, not an array), combined with `conditions.clientApplications.includeAgentIdServicePrincipals: ["All"]` and `conditions.users.includeUsers: ["None"]`. Updated across all four relevant files: [graph-client.ts](src/lib/graph-client.ts) (new types + parser), [policy-templates.ts](src/data/policy-templates.ts) (new fingerprint fields + fixed deploymentJson), [template-matcher.ts](src/lib/template-matcher.ts) (new scoring checks for `targetsAgentIdentities` weight 15 and `agentIdRiskLevels` weight 20), and [github-templates.ts](src/lib/github-templates.ts) (fingerprint builder extracts agent fields from repo JSON).
+---
 
-### v1.15.4 — Test folder exclusion from GitHub loader; MDCA prerequisites UI (June 2, 2026)
-- **GitHub template loader no longer recurses into `Test/` subdirectories** — `fetchJsonFiles` in [src/lib/github-templates.ts](src/lib/github-templates.ts) now skips any directory named `test`, `tests`, `scratch`, `temp`, or `tmp` (case-insensitive), preventing test/draft policies from appearing as gap-analysis templates.
-- **Prerequisites field for templates with external dependencies** — `PolicyTemplate` now has an optional `prerequisites` field. The `INTUNE - SESSION - Block File Downloads On Unmanaged Devices` template uses it to surface an amber ⚠ warning card that **Microsoft Defender for Cloud Apps (MDCA)** must be active and Office 365 apps onboarded before the session control can enforce file-download blocking.
+### v1.15 — Lewis Barry Baseline, Policy Fixes & Improvements (June 2, 2026)
 
-### v1.15.3 — Informational finding for safe "Register security info" policies (May 30, 2026)
-- **Registration-targeting policies now always surface the MC1326253 context** — a healthy policy targeting `urn:user:registersecurityinfo` with only **MFA / authentication strength** (no device-compliance, trusted-location, approved-app, or device-filter constraints) previously produced *no* finding. The check in [src/lib/analyzer.ts](src/lib/analyzer.ts) now emits an **info-level** finding confirming the policy will begin applying during **WHfB** and **macOS Platform SSO** registration from **July 6, 2026** (complete July 13), and that it looks safe to apply during new-device setup. The finding is report-only-aware and links to MC1326253.
+**Major additions & changes across v1.15.x:**
 
-### v1.15.2 — "Register security info" check updated for MC1326253 (May 30, 2026)
-- **Confirmed rollout dates and scope for the WHfB / macOS Platform SSO registration change** — the credential-registration check was updated from "May 2026 / MC March 2026" placeholders to the confirmed **July 6–13, 2026** timeline from MC1326253. Conditional Access policies scoped to **Register security info** will be evaluated during Windows Hello for Business and macOS Platform SSO registration. Links to MC1326253 / the [Require MFA for security info registration](https://learn.microsoft.com/entra/identity/conditional-access/policy-all-users-security-info-registration) docs.
-See [CHANGELOG.md](CHANGELOG.md) for the full version history including v1.14.7 (layered GitHub baselines + PowerShell PascalCase support), v1.14.6 (persona detection: CamelCase + `CA<nnn>` prefix mapping), v1.14.5 (phishing-resistant detection unified across all surfaces), v1.14.4 (phishing-resistant detector fix in persona coverage), v1.14.3 (report-only-aware MFA finding), v1.14.2 (phishing-resistant scorecard fix), v1.14.1 (deployment ZIP bundle), v1.14.0 (Deployment Plans + Persona-aware PPTX), v1.13.0 (Baseline Gap Analysis), v1.12.0 (Zero Trust Scorecard), v1.11.0 (Persona × Control Coverage) and earlier.
+- **Lewis Barry built-in baseline** — 13 templates (`CA01`–`CA12` + `CA11B`) from [conditionalaccess.uk](https://conditionalaccess.uk/blog/some-policies-i-use-in-conditional-access/) by Lewis Barry (Microsoft MVP). Selectable from a dropdown under "Built-in baselines" alongside the existing Jon Hope baseline. Lewis Barry templates are excluded from your normal tenant coverage score — supplemental view only. The score ring, Present/Partial/Missing counts, and subtitle all update live when switching baselines.
+- **Agent identity template fix** — `AGENT - BLOCK - HighRiskAgents` fingerprint corrected to use Graph API preview fields (`agentIdRiskLevels`, `clientApplications.includeAgentIdServicePrincipals`).
+- **App exclusion count fix** — finding titles now always reflect the true number of excluded apps, including unrecognized app IDs not in the known service principal catalog.
+- **MDCA prerequisites UI** — templates with external dependencies (e.g. Defender for Cloud Apps) surface an amber ⚠ warning card before deployment.
+- **GitHub template loader** — no longer recurses into `Test/` subdirectories, preventing draft/test policies appearing in gap analysis.
+- **"Register security info" updates** — confirmed July 6–13, 2026 rollout for MC1326253 (WHfB / macOS Platform SSO registration change); safe policies now emit an info-level finding with context.
+
+See [CHANGELOG.md](CHANGELOG.md) for the full version history including v1.14.7 (layered GitHub baselines), v1.14.0 (Deployment Plans), v1.13.0 (Baseline Gap Analysis), v1.12.0 (Zero Trust Scorecard) and earlier.
 
 
 
