@@ -228,9 +228,11 @@ function scorePolicyMatch(
  totalWeight += 10;
  const policyTypes = new Set(policy.conditions.clientAppTypes.map((t) => t.toLowerCase()));
  const templateTypes = new Set(fingerprint.clientAppTypes.map((t) => t.toLowerCase()));
+ // A policy targeting [all] client app types is a superset of any specific type fingerprint
+ const policyClientTargetsAll = policyTypes.has("all");
  const overlap = [...templateTypes].filter((t) => policyTypes.has(t));
 
- if (overlap.length > 0) {
+ if (policyClientTargetsAll || overlap.length > 0) {
  matchedWeight += 10;
  } else {
  differences.push(
