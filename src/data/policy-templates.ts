@@ -1300,7 +1300,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
     fingerprint: {
       includeApps: ["All"],
       targetsAllUsers: true,
-      clientAppTypes: ["all"],
+      clientAppTypes: ["browser"],
       sessionSignInFrequency: true,
       sessionPersistentBrowser: true,
     },
@@ -1321,7 +1321,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
           excludeApplications: [],
           includeUserActions: [],
         },
-        clientAppTypes: ["all"],
+        clientAppTypes: ["browser"],
       },
       sessionControls: {
         signInFrequency: {
