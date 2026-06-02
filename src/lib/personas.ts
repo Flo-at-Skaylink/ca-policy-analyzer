@@ -230,7 +230,7 @@ const PERSONA_PATTERNS: Array<{ persona: Persona; patterns: RegExp[] }> = [
       // microsoft365serviceaccounts and workloadidentities matchers above are
       // tested first, so they win when their more-specific tokens are present.
       new RegExp(
-        `${TB}(corp(?:orate)?serviceaccounts?|corpservice|corpsvc|svcaccounts?|serviceaccounts?)${TE}`,
+        `${TB}(corp(?:orate)?[\\s_-]?serviceaccounts?|corpservice|corpsvc|svcaccounts?|service[\\s_-]?accounts?)${TE}`,
         "i"
       ),
     ],
