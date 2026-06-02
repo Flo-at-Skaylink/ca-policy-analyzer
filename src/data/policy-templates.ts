@@ -20,7 +20,8 @@ export type TemplateCategory =
   | "p2"
   | "ztca"
   | "workload"
-  | "agent";
+  | "agent"
+  | "lewis-barry";
 
 export type ControlType = "BLOCK" | "GRANT" | "SESSION";
 
@@ -129,6 +130,7 @@ export interface DeploymentPolicy {
   grantControls?: {
     operator: "AND" | "OR";
     builtInControls: string[];
+    authenticationStrength?: { id: string; displayName?: string };
   };
   sessionControls?: {
     signInFrequency?: {
@@ -2055,6 +2057,590 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
       },
     },
   },
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // LEWIS BARRY STARTER SET
+  // Source: https://conditionalaccess.uk/blog/some-policies-i-use-in-conditional-access/
+  // By Lewis Barry (Microsoft MVP) — conditionalaccess.uk
+  // ═══════════════════════════════════════════════════════════════════════
+  {
+    id: "lb-ca01-mfa-all-users",
+    displayName: "LB - CA01 - MFA - All Users - All Resources",
+    category: "lewis-barry",
+    controlType: "GRANT",
+    priority: "critical",
+    summary: "Require MFA for all users on all resources",
+    rationale:
+      "The foundation of any CA deployment. Lewis Barry's approach: apply broadly, exclude narrowly. No network restrictions, no client app scoping — everyone gets MFA. The end goal is every user gets MFA without exception.",
+    prerequisites:
+      "Credit: Lewis Barry (Microsoft MVP) — https://conditionalaccess.uk/blog/some-policies-i-use-in-conditional-access/",
+    fingerprint: {
+      includeApps: ["All"],
+      grantControls: ["mfa"],
+      targetsAllUsers: true,
+      clientAppTypes: ["all"],
+    },
+    deploymentJson: {
+      displayName: "YOURORG - LB - CA01 - MFA - All Users - All Resources",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: ["All"],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: ["All"],
+          excludeApplications: [],
+          includeUserActions: [],
+        },
+        clientAppTypes: ["all"],
+      },
+      grantControls: { operator: "OR", builtInControls: ["mfa"] },
+    },
+  },
+  {
+    id: "lb-ca02-block-legacy-auth",
+    displayName: "LB - CA02 - Block Legacy Authentication",
+    category: "lewis-barry",
+    controlType: "BLOCK",
+    priority: "critical",
+    summary: "Block Exchange ActiveSync and other legacy authentication clients",
+    rationale:
+      "Legacy auth protocols cannot perform MFA and are the #1 vector for password spray attacks. Lewis Barry notes: don't exclude break-glass from this one — in an emergency your Global Admin account isn't logging in via SMTP.",
+    prerequisites:
+      "Credit: Lewis Barry (Microsoft MVP) — https://conditionalaccess.uk/blog/some-policies-i-use-in-conditional-access/",
+    fingerprint: {
+      includeApps: ["All"],
+      grantControls: ["block"],
+      targetsAllUsers: true,
+      clientAppTypes: ["exchangeActiveSync", "other"],
+    },
+    deploymentJson: {
+      displayName: "YOURORG - LB - CA02 - Block Legacy Authentication",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: ["All"],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: ["All"],
+          excludeApplications: [],
+          includeUserActions: [],
+        },
+        clientAppTypes: ["exchangeActiveSync", "other"],
+      },
+      grantControls: { operator: "OR", builtInControls: ["block"] },
+    },
+  },
+  {
+    id: "lb-ca03-block-unsupported-os",
+    displayName: "LB - CA03 - Block Unsupported OS Types",
+    category: "lewis-barry",
+    controlType: "BLOCK",
+    priority: "critical",
+    summary: "Block access from any platform except Android, iOS, Windows, and macOS",
+    rationale:
+      "Entra doesn't enumerate every possible user agent. By including all platforms and excluding only those you explicitly support, you dramatically reduce attack surface from unknown OS types. Remove macOS from the exclusion if your org doesn't use it.",
+    prerequisites:
+      "Credit: Lewis Barry (Microsoft MVP) — https://conditionalaccess.uk/blog/some-policies-i-use-in-conditional-access/",
+    fingerprint: {
+      includeApps: ["All"],
+      grantControls: ["block"],
+      targetsAllUsers: true,
+      platforms: { include: ["all"], exclude: ["android", "iOS", "windows", "macOS"] },
+    },
+    deploymentJson: {
+      displayName: "YOURORG - LB - CA03 - Block Unsupported OS Types",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: ["All"],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: ["All"],
+          excludeApplications: [],
+          includeUserActions: [],
+        },
+        clientAppTypes: ["all"],
+        platforms: {
+          includePlatforms: ["all"],
+          excludePlatforms: ["android", "iOS", "windows", "macOS"],
+        },
+      },
+      grantControls: { operator: "OR", builtInControls: ["block"] },
+    },
+  },
+  {
+    id: "lb-ca04-require-app-protection-mobile",
+    displayName: "LB - CA04 - Require App Protection Policy (Mobile)",
+    category: "lewis-barry",
+    controlType: "GRANT",
+    priority: "critical",
+    summary: "Require Intune app protection policy (MAM-WE) for Android and iOS",
+    rationale:
+      "Lewis Barry's preferred route is MAM-WE (Mobile Application Management without Enrollment) — no personal device enrollment required. Ensures corporate data is only accessible within managed, protected apps on mobile platforms.",
+    prerequisites:
+      "Requires an Intune App Protection Policy targeting Android and iOS. Credit: Lewis Barry (Microsoft MVP) — https://conditionalaccess.uk/blog/some-policies-i-use-in-conditional-access/",
+    licenseRequirement: "intunePlan1",
+    fingerprint: {
+      includeApps: ["All"],
+      grantControls: ["compliantApplication"],
+      targetsAllUsers: true,
+      platforms: { include: ["android", "iOS"], exclude: [] },
+    },
+    deploymentJson: {
+      displayName: "YOURORG - LB - CA04 - Require App Protection Policy (Mobile)",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: ["All"],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: ["All"],
+          excludeApplications: [],
+          includeUserActions: [],
+        },
+        clientAppTypes: ["all"],
+        platforms: {
+          includePlatforms: ["android", "iOS"],
+          excludePlatforms: [],
+        },
+      },
+      grantControls: { operator: "OR", builtInControls: ["compliantApplication"] },
+    },
+  },
+  {
+    id: "lb-ca05-require-compliant-desktop",
+    displayName: "LB - CA05 - Require Compliant Device (Desktop)",
+    category: "lewis-barry",
+    controlType: "GRANT",
+    priority: "critical",
+    summary: "Require compliant device for Windows and macOS access",
+    rationale:
+      "Lewis Barry: probably the most effective way of preventing AiTM (adversary-in-the-middle) breaches. Business data should only be accessed on managed, compliant business devices. Requires Intune device compliance policies.",
+    prerequisites:
+      "Requires Intune device compliance policies for Windows and macOS. Credit: Lewis Barry (Microsoft MVP) — https://conditionalaccess.uk/blog/some-policies-i-use-in-conditional-access/",
+    licenseRequirement: "intunePlan1",
+    fingerprint: {
+      includeApps: ["All"],
+      grantControls: ["compliantDevice"],
+      targetsAllUsers: true,
+      platforms: { include: ["windows", "macOS"], exclude: [] },
+    },
+    deploymentJson: {
+      displayName: "YOURORG - LB - CA05 - Require Compliant Device (Desktop)",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: ["All"],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: ["All"],
+          excludeApplications: [],
+          includeUserActions: [],
+        },
+        clientAppTypes: ["all"],
+        platforms: {
+          includePlatforms: ["windows", "macOS"],
+          excludePlatforms: [],
+        },
+      },
+      grantControls: { operator: "OR", builtInControls: ["compliantDevice"] },
+    },
+  },
+  {
+    id: "lb-ca06-block-device-code-flow",
+    displayName: "LB - CA06 - Block Device Code Flow",
+    category: "lewis-barry",
+    controlType: "BLOCK",
+    priority: "critical",
+    summary: "Block the device code (\"Netflix-style\") authentication flow for all users",
+    rationale:
+      "Device code phishing lets attackers send a code link to a victim — the victim authenticates and the attacker steals the token. Most end users don't need this flow; some admin PowerShell modules do — exclude those service accounts as needed.",
+    prerequisites:
+      "Credit: Lewis Barry (Microsoft MVP) — https://conditionalaccess.uk/blog/some-policies-i-use-in-conditional-access/",
+    fingerprint: {
+      includeApps: ["All"],
+      grantControls: ["block"],
+      targetsAllUsers: true,
+      authenticationFlows: ["authenticationTransfer"],
+    },
+    deploymentJson: {
+      displayName: "YOURORG - LB - CA06 - Block Device Code Flow",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: ["All"],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: ["All"],
+          excludeApplications: [],
+          includeUserActions: [],
+        },
+        clientAppTypes: ["all"],
+        authenticationFlows: { transferMethods: "deviceCodeFlow" },
+      },
+      grantControls: { operator: "OR", builtInControls: ["block"] },
+    },
+  },
+  {
+    id: "lb-ca07-signin-risk-mfa",
+    displayName: "LB - CA07 - Sign-In Risk Medium/High - Require MFA",
+    category: "lewis-barry",
+    controlType: "GRANT",
+    priority: "critical",
+    summary: "Require MFA with every-time sign-in frequency for medium and high sign-in risk",
+    rationale:
+      "Lewis Barry: in conjunction with requiring compliant devices, this removes the need for location blocking. Medium/high risk sign-ins indicate unusual travel, token replay, or anomalous behaviour — re-authentication required every time.",
+    prerequisites:
+      "Requires Entra ID P2. Credit: Lewis Barry (Microsoft MVP) — https://conditionalaccess.uk/blog/some-policies-i-use-in-conditional-access/",
+    licenseRequirement: "entraIdP2",
+    fingerprint: {
+      includeApps: ["All"],
+      grantControls: ["mfa"],
+      targetsAllUsers: true,
+      signInRiskLevels: ["high", "medium"],
+      sessionSignInFrequencyEveryTime: true,
+    },
+    deploymentJson: {
+      displayName: "YOURORG - LB - CA07 - Sign-In Risk Medium/High - Require MFA",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: ["All"],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: ["All"],
+          excludeApplications: [],
+          includeUserActions: [],
+        },
+        clientAppTypes: ["all"],
+        signInRiskLevels: ["high", "medium"],
+      },
+      grantControls: { operator: "OR", builtInControls: ["mfa"] },
+      sessionControls: {
+        signInFrequency: {
+          isEnabled: true,
+          value: null,
+          type: null,
+          frequencyInterval: "everyTime",
+          authenticationType: "primaryAndSecondaryAuthentication",
+        },
+      },
+    },
+  },
+  {
+    id: "lb-ca08-user-risk-password-change",
+    displayName: "LB - CA08 - User Risk High - Require Password Change",
+    category: "lewis-barry",
+    controlType: "GRANT",
+    priority: "critical",
+    summary: "Require password change and every-time re-authentication for high user risk",
+    rationale:
+      "High user risk means credentials are likely compromised (leaked on dark web or confirmed breach). Forcing a password change with every-time sign-in frequency closes the compromise window immediately.",
+    prerequisites:
+      "Requires Entra ID P2. Credit: Lewis Barry (Microsoft MVP) — https://conditionalaccess.uk/blog/some-policies-i-use-in-conditional-access/",
+    licenseRequirement: "entraIdP2",
+    fingerprint: {
+      includeApps: ["All"],
+      grantControls: ["riskremediation"],
+      targetsAllUsers: true,
+      userRiskLevels: ["high"],
+      sessionSignInFrequencyEveryTime: true,
+    },
+    deploymentJson: {
+      displayName: "YOURORG - LB - CA08 - User Risk High - Require Password Change",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: ["All"],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: ["All"],
+          excludeApplications: [],
+          includeUserActions: [],
+        },
+        clientAppTypes: ["all"],
+        userRiskLevels: ["high"],
+      },
+      grantControls: { operator: "OR", builtInControls: ["riskremediation"] },
+      sessionControls: {
+        signInFrequency: {
+          isEnabled: true,
+          value: null,
+          type: null,
+          frequencyInterval: "everyTime",
+          authenticationType: "primaryAndSecondaryAuthentication",
+        },
+      },
+    },
+  },
+  {
+    id: "lb-ca09-windows-token-protection",
+    displayName: "LB - CA09 - Windows Token Protection",
+    category: "lewis-barry",
+    controlType: "SESSION",
+    priority: "recommended",
+    summary: "Require token binding for Windows desktop clients on Teams, Exchange, and SharePoint",
+    rationale:
+      "Token protection binds tokens to the device, preventing Pass-the-Token / token theft attacks. Most attackers target Teams, Exchange Online, and SharePoint as entry points. Combine with Require Compliant Device for layered defence.",
+    prerequisites:
+      "Credit: Lewis Barry (Microsoft MVP) — https://conditionalaccess.uk/blog/some-policies-i-use-in-conditional-access/",
+    fingerprint: {
+      includeApps: [
+        "cc15fd57-2c6c-4117-a88c-83b1d56b4bbe", // Microsoft Teams Services
+        "00000002-0000-0ff1-ce00-000000000000", // Office 365 Exchange Online
+        "00000003-0000-0ff1-ce00-000000000000", // Office 365 SharePoint Online
+      ],
+      targetsAllUsers: true,
+      clientAppTypes: ["mobileAppsAndDesktopClients"],
+      platforms: { include: ["windows"], exclude: [] },
+    },
+    deploymentJson: {
+      displayName: "YOURORG - LB - CA09 - Windows Token Protection",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: ["All"],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: [
+            "cc15fd57-2c6c-4117-a88c-83b1d56b4bbe",
+            "00000002-0000-0ff1-ce00-000000000000",
+            "00000003-0000-0ff1-ce00-000000000000",
+          ],
+          excludeApplications: [],
+          includeUserActions: [],
+        },
+        clientAppTypes: ["mobileAppsAndDesktopClients"],
+        platforms: {
+          includePlatforms: ["windows"],
+          excludePlatforms: [],
+        },
+      },
+      sessionControls: {
+        secureSignInSession: { isEnabled: true },
+      },
+    },
+  },
+  {
+    id: "lb-ca10-breakglass-fido2",
+    displayName: "LB - CA10 - Breakglass - Require FIDO2",
+    category: "lewis-barry",
+    controlType: "GRANT",
+    priority: "critical",
+    summary: "Require phishing-resistant MFA (FIDO2) for break-glass accounts",
+    rationale:
+      "Lewis Barry: a long password in a safe is not sufficient for your Global Admin break-glass account. FIDO2 is phishing-resistant and provides the highest assurance level available.",
+    prerequisites:
+      "⚠️ Replace PLACEHOLDER_BREAKGLASS_OBJECT_ID in the deployment JSON with your break-glass account's Object ID. Ensure a FIDO2 security key is registered on the account before enforcing. Credit: Lewis Barry (Microsoft MVP) — https://conditionalaccess.uk/blog/some-policies-i-use-in-conditional-access/",
+    fingerprint: {
+      includeApps: ["All"],
+      grantControls: ["authenticationStrength"],
+    },
+    deploymentJson: {
+      displayName: "YOURORG - LB - CA10 - Breakglass - Require FIDO2",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: ["PLACEHOLDER_BREAKGLASS_OBJECT_ID"],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: ["All"],
+          excludeApplications: [],
+          includeUserActions: [],
+        },
+        clientAppTypes: ["all"],
+      },
+      grantControls: {
+        operator: "OR",
+        builtInControls: [],
+        authenticationStrength: {
+          id: "00000000-0000-0000-0000-000000000002",
+          displayName: "Phishing-resistant MFA",
+        },
+      },
+    },
+  },
+  {
+    id: "lb-ca11-block-security-info-outside-countries",
+    displayName: "LB - CA11 - Block Security Info Registration Outside Operating Countries",
+    category: "lewis-barry",
+    controlType: "BLOCK",
+    priority: "recommended",
+    summary: "Block MFA method registration from outside operating countries",
+    rationale:
+      "A freshly created account without MFA registration is highly vulnerable. Restricting where MFA methods can be registered prevents attackers from registering their own MFA methods after a credential compromise.",
+    prerequisites:
+      "Requires a named location defining your operating countries (Entra > Security > Named Locations). Replace PLACEHOLDER_NAMED_LOCATION_ID in the deployment JSON with its ID. If new starters always begin in the office, scope to just that location. Credit: Lewis Barry (Microsoft MVP) — https://conditionalaccess.uk/blog/some-policies-i-use-in-conditional-access/",
+    fingerprint: {
+      includeApps: [],
+      includeUserActions: ["urn:user:registersecurityinfo"],
+      grantControls: ["block"],
+      targetsAllUsers: true,
+      usesLocationCondition: true,
+    },
+    deploymentJson: {
+      displayName: "YOURORG - LB - CA11 - Block Security Info Registration Outside Operating Countries",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: ["All"],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: [],
+          excludeApplications: [],
+          includeUserActions: ["urn:user:registersecurityinfo"],
+        },
+        clientAppTypes: ["all"],
+        locations: {
+          includeLocations: ["All"],
+          excludeLocations: ["PLACEHOLDER_NAMED_LOCATION_ID"],
+        },
+      },
+      grantControls: { operator: "OR", builtInControls: ["block"] },
+    },
+  },
+  {
+    id: "lb-ca11b-require-tap-security-info",
+    displayName: "LB - CA11B - Require TAP for Security Info Registration",
+    category: "lewis-barry",
+    controlType: "GRANT",
+    priority: "recommended",
+    summary: "Require a Temporary Access Pass (TAP) to register MFA methods",
+    rationale:
+      "A more secure alternative to CA11. Only users explicitly issued a TAP by an administrator can register MFA methods — eliminating the registration risk window entirely. Excludes guests and external users.",
+    prerequisites:
+      "Requires a custom Authentication Strength containing only Temporary Access Pass (TAP) — create it in Entra > Security > Authentication strengths. Replace PLACEHOLDER_TAP_AUTH_STRENGTH_ID with its ID. Credit: Lewis Barry (Microsoft MVP) — https://conditionalaccess.uk/blog/some-policies-i-use-in-conditional-access/",
+    fingerprint: {
+      includeApps: [],
+      includeUserActions: ["urn:user:registersecurityinfo"],
+      grantControls: ["authenticationStrength"],
+      targetsAllUsers: true,
+    },
+    deploymentJson: {
+      displayName: "YOURORG - LB - CA11B - Require TAP for Security Info Registration",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: ["All"],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: [],
+          excludeApplications: [],
+          includeUserActions: ["urn:user:registersecurityinfo"],
+        },
+        clientAppTypes: ["all"],
+      },
+      grantControls: {
+        operator: "OR",
+        builtInControls: [],
+        authenticationStrength: {
+          id: "PLACEHOLDER_TAP_AUTH_STRENGTH_ID",
+          displayName: "Custom — TAP Only",
+        },
+      },
+    },
+  },
+  {
+    id: "lb-ca12-block-auth-transfer",
+    displayName: "LB - CA12 - Block Authentication Transfer Flows",
+    category: "lewis-barry",
+    controlType: "BLOCK",
+    priority: "recommended",
+    summary: "Block authentication transfer (QR code device-to-device session passing)",
+    rationale:
+      "Authentication transfer allows a user to pass their authenticated session to another device via QR code. This can be abused by social engineering attacks or attackers with physical device access.",
+    prerequisites:
+      "Credit: Lewis Barry (Microsoft MVP) — https://conditionalaccess.uk/blog/some-policies-i-use-in-conditional-access/",
+    fingerprint: {
+      includeApps: ["All"],
+      grantControls: ["block"],
+      targetsAllUsers: true,
+      authenticationFlows: ["authenticationTransfer"],
+    },
+    deploymentJson: {
+      displayName: "YOURORG - LB - CA12 - Block Authentication Transfer Flows",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: ["All"],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: ["All"],
+          excludeApplications: [],
+          includeUserActions: [],
+        },
+        clientAppTypes: ["all"],
+        authenticationFlows: { transferMethods: "authenticationTransfer" },
+      },
+      grantControls: { operator: "OR", builtInControls: ["block"] },
+    },
+  },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -2120,5 +2706,11 @@ export const CATEGORY_META: Record<
     description:
       "Policies for Microsoft Entra Agent Identities — cloud sync agents, connectors, and non-human agent objects.",
     icon: "🤖",
+  },
+  "lewis-barry": {
+    label: "Lewis Barry — Starter Set",
+    description:
+      "An opinionated 12-policy starter set by Lewis Barry (Microsoft MVP, conditionalaccess.uk). Covers MFA for all users, legacy auth blocking, unsupported OS blocking, mobile app protection (MAM-WE), compliant desktop, device code flow blocking, sign-in/user risk policies, Windows token protection, break-glass FIDO2, security info registration controls, and auth-transfer blocking.",
+    icon: "🧰",
   },
 };

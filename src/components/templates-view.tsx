@@ -551,6 +551,7 @@ export function TemplatesView({
   onResetTemplates,
 }: TemplatesViewProps) {
   const [statusFilter, setStatusFilter] = useState<MatchStatus | "all">("all");
+  const [categoryFilter, setCategoryFilter] = useState<TemplateCategory | null>(null);
   const [showGitHubInput, setShowGitHubInput] = useState(false);
   const [gitHubUrl, setGitHubUrl] = useState("");
   const [loading, setLoading] = useState(false);
@@ -577,10 +578,9 @@ export function TemplatesView({
     setLoadError(null);
   };
 
-  const filteredMatches =
-    statusFilter === "all"
-      ? result.matches
-      : result.matches.filter((m) => m.status === statusFilter);
+  const filteredMatches = result.matches
+    .filter((m) => statusFilter === "all" || m.status === statusFilter)
+    .filter((m) => categoryFilter === null || m.template.category === categoryFilter);
 
   // Group by category
   const categories = [
@@ -596,6 +596,7 @@ export function TemplatesView({
     "workload",
     "ztca",
     "agent",
+    "lewis-barry",
   ];
   categories.sort(
     (a, b) => categoryOrder.indexOf(a) - categoryOrder.indexOf(b)
@@ -763,6 +764,45 @@ export function TemplatesView({
                   Claus Jespersen&apos;s Zero Trust persona framework
                 </a>
                 . When the loaded repo uses persona naming (Admins, Internals, Externals, Workload, etc.), policies group by persona automatically.
+              </p>
+            </div>
+
+            {/* Built-in starter sets (filter view) */}
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-gray-400">
+                Built-in starter sets (filter view):
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() =>
+                    setCategoryFilter((prev) =>
+                      prev === "lewis-barry" ? null : "lewis-barry"
+                    )
+                  }
+                  title="Lewis Barry (Microsoft MVP) — An opinionated 12-policy starter set. Source: conditionalaccess.uk"
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition-colors",
+                    categoryFilter === "lewis-barry"
+                      ? "border-blue-500 bg-blue-600/20 text-blue-300"
+                      : "border-gray-700 bg-gray-800 text-gray-200 hover:bg-gray-700 hover:border-gray-600"
+                  )}
+                >
+                  🧰 Lewis Barry — Starter Set
+                  {categoryFilter === "lewis-barry" && (
+                    <X className="h-3 w-3 ml-0.5" />
+                  )}
+                </button>
+              </div>
+              <p className="text-[11px] text-gray-500">
+                Built-in templates sourced from community authors. Click to filter the template list to that set only. Source:{" "}
+                <a
+                  href="https://conditionalaccess.uk/blog/some-policies-i-use-in-conditional-access/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-400 hover:text-blue-300 underline"
+                >
+                  conditionalaccess.uk
+                </a>
               </p>
             </div>
             <div className="flex gap-2">
