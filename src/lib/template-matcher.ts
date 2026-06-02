@@ -112,6 +112,11 @@ function scorePolicyMatch(
  const policyControls = new Set((grant?.builtInControls ?? []).map((c) => c.toLowerCase()));
  const templateControls = new Set(fingerprint.grantControls.map((c) => c.toLowerCase()));
 
+ // passwordChange and riskremediation are aliases (same control, different API versions)
+ const GRANT_ALIASES: Record<string, string> = { passwordchange: "riskremediation", riskremediation: "passwordchange" };
+ const normalizedPolicyControls = new Set([...policyControls, ...[...policyControls].map(c => GRANT_ALIASES[c]).filter(Boolean)]);
+ const normalizedTemplateControls = new Set([...templateControls, ...[...templateControls].map(c => GRANT_ALIASES[c]).filter(Boolean)]);
+
  // Authentication strengths satisfy (and exceed) an "mfa" grant control requirement
  const hasAuthStrength = grant?.authenticationStrength != null;
  const templateRequiresMfa = templateControls.has("mfa");
@@ -121,7 +126,7 @@ function scorePolicyMatch(
  // Auth strengths are a superset of MFA — full credit
  matchedWeight += 25;
  } else {
- const overlap = [...templateControls].filter((c) => policyControls.has(c));
+ const overlap = [...templateControls].filter((c) => normalizedPolicyControls.has(c));
  const fullMatch = overlap.length === templateControls.size;
  // OR operator: having any one of the required controls is sufficient for full credit
  const orMatch = grantOp === "OR" && overlap.length >= 1;

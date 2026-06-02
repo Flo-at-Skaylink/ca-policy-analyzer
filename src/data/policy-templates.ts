@@ -1439,16 +1439,16 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
     controlType: "GRANT",
     priority: "critical",
     summary:
-      "Require MFA and password change for high-risk users",
+      "Require MFA and risk remediation for high-risk users",
     rationale:
-      "High-risk users have confirmed compromised credentials (from dark web leaks or confirmed breaches). Forcing MFA + password change remediates the compromise.",
+      "High-risk users have confirmed compromised credentials (from dark web leaks or confirmed breaches). Forcing MFA + risk remediation (password change) closes the compromise. The Graph API control is 'riskremediation' — equivalent to the legacy 'passwordChange' control.",
     licenseRequirement: "entraIdP2",
     cisControls: ["6.3.2"],
     fingerprint: {
       includeApps: ["All"],
       targetsAllUsers: true,
       userRiskLevels: ["high"],
-      grantControls: ["mfa", "passwordChange"],
+      grantControls: ["mfa", "riskremediation"],
       grantOperator: "AND",
     },
     deploymentJson: {
@@ -1473,7 +1473,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
       },
       grantControls: {
         operator: "AND",
-        builtInControls: ["mfa", "passwordChange"],
+        builtInControls: ["mfa", "riskremediation"],
       },
       sessionControls: {
         signInFrequency: {
@@ -1492,16 +1492,16 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
     category: "p2",
     controlType: "GRANT",
     priority: "recommended",
-    summary: "Require MFA and password change for medium-risk users",
+    summary: "Require MFA and risk remediation for medium-risk users",
     rationale:
-      "Medium-risk users may have leaked credentials or suspicious activity patterns. Proactively requiring password change reduces exposure.",
+      "Medium-risk users may have leaked credentials or suspicious activity patterns. Proactively requiring risk remediation (password change) reduces exposure.",
     licenseRequirement: "entraIdP2",
     cisControls: ["6.3.2"],
     fingerprint: {
       includeApps: ["All"],
       targetsAllUsers: true,
       userRiskLevels: ["medium"],
-      grantControls: ["mfa", "passwordChange"],
+      grantControls: ["mfa", "riskremediation"],
       grantOperator: "AND",
     },
     deploymentJson: {
@@ -1526,7 +1526,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
       },
       grantControls: {
         operator: "AND",
-        builtInControls: ["mfa", "passwordChange"],
+        builtInControls: ["mfa", "riskremediation"],
       },
     },
   },
