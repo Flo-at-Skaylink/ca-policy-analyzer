@@ -5,6 +5,32 @@ All notable changes to the CA Policy Analyzer will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.6] - 2026-06-02
+
+### Fixed
+
+- **App exclusion count now includes unrecognized app IDs** — `checkServicePrincipalExclusions` in [src/lib/analyzer.ts](src/lib/analyzer.ts) previously silently dropped any excluded app ID that was not found in the service principal map, `CA_BYPASS_APPS`, or `APP_DESCRIPTION_MAP`, causing the finding title to report fewer apps than the policy actually excluded (e.g. "4 app(s) excluded" when the policy had 5 excluded apps). The guard has been removed so every excluded app ID is always included in the finding. Unresolved IDs fall back to displaying the raw app ID as the name with a purpose of "Unrecognized app ID — not found in service principal list or known app catalog."
+
+## [1.15.5] - 2026-06-02
+
+### Fixed
+
+- **`AGENT - BLOCK - HighRiskAgents` template corrected for the Graph API agent identity fields** — the fingerprint was matching wrong policies at 71% (Device Code, Legacy Auth, Countries) because it checked `signInRiskLevels: ["high"]`, which is a completely different Graph API field from the one used by agent CA policies. The real `IAC - AGENT - BLOCK - HighRiskAgent` policy in the Graph API uses `conditions.agentIdRiskLevels: "high"` (a preview field, string not array) and `conditions.clientApplications.includeAgentIdServicePrincipals: ["All"]`, with `conditions.users.includeUsers: ["None"]` since principal scoping is done via `clientApplications` not `users`. All four relevant files were updated:
+  - **[src/lib/graph-client.ts](src/lib/graph-client.ts)** — added `agentIdRiskLevels?: string` to `ConditionalAccessConditionSet` and `includeAgentIdServicePrincipals?: string[]` / `excludeAgentIdServicePrincipals?: string[]` to `ClientApplications`; `agentIdRiskLevels` is now parsed in `parsePolicy`.
+  - **[src/data/policy-templates.ts](src/data/policy-templates.ts)** — added `agentIdRiskLevels?: string[]` and `targetsAgentIdentities?: boolean` to `TemplateFingerprint`; added `agentIdRiskLevels?: string` to `DeploymentPolicy` conditions type; fixed the `agent-block-high-risk` fingerprint to use the new fields instead of `signInRiskLevels`; fixed `deploymentJson` to use `includeUsers: ["None"]` and `agentIdRiskLevels: "high"`.
+  - **[src/lib/template-matcher.ts](src/lib/template-matcher.ts)** — added `targetsAgentIdentities` check (weight 15) reading `clientApplications.includeAgentIdServicePrincipals`; added `agentIdRiskLevels` check (weight 20) reading `conditions.agentIdRiskLevels`.
+  - **[src/lib/github-templates.ts](src/lib/github-templates.ts)** — fingerprint builder now extracts `agentIdRiskLevels` and `includeAgentIdServicePrincipals` from GitHub policy JSON so custom-repo agent policies are fingerprinted correctly.
+
+## [1.15.4] - 2026-06-02
+
+### Added
+
+- **Prerequisites field for templates with external dependencies** — `PolicyTemplate` in [src/data/policy-templates.ts](src/data/policy-templates.ts) now has an optional `prerequisites?: string` field. The `INTUNE - SESSION - Block File Downloads On Unmanaged Devices` template uses it to surface a visible warning that **Microsoft Defender for Cloud Apps (MDCA)** must be active and Office 365 apps onboarded before the policy can enforce file-download blocking. [src/components/templates-view.tsx](src/components/templates-view.tsx) renders the field as an amber ⚠ "Prerequisites" card between the "Why this matters" and "CIS Controls" sections.
+
+### Fixed
+
+- **GitHub template loader no longer recurses into `Test/` subdirectories** — `fetchJsonFiles` in [src/lib/github-templates.ts](src/lib/github-templates.ts) previously loaded policy files from every subdirectory of the configured repo, including `Test/` and `New/`. It now skips any directory whose name matches `test`, `tests`, `scratch`, `temp`, or `tmp` (case-insensitive), preventing test/draft policies from appearing as gap-analysis templates.
+
 ## [1.15.3] - 2026-05-30
 
 ### Added

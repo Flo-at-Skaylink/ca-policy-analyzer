@@ -427,22 +427,20 @@ function checkServicePrincipalExclusions(
     );
     const appDesc = APP_DESCRIPTION_MAP.get(appId.toLowerCase());
 
-    if (sp || bypassApp || appDesc) {
-      const name = appDesc?.displayName ?? sp?.displayName ?? bypassApp?.displayName ?? appId;
-      const purpose = appDesc?.purpose ?? bypassApp?.description ?? `Service principal: ${sp?.servicePrincipalType ?? "Application"}`;
-      const reason = appDesc?.commonExclusionReason ?? "No documented exclusion reason. Review whether this exclusion is necessary.";
-      const risk = appDesc?.exclusionRisk ?? (bypassApp ? "high" : "medium");
+    const name = appDesc?.displayName ?? sp?.displayName ?? bypassApp?.displayName ?? appId;
+    const purpose = appDesc?.purpose ?? bypassApp?.description ?? (sp ? `Service principal: ${sp.servicePrincipalType ?? "Application"}` : "Unrecognized app ID — not found in service principal list or known app catalog.");
+    const reason = appDesc?.commonExclusionReason ?? "No documented exclusion reason. Review whether this exclusion is necessary.";
+    const risk = appDesc?.exclusionRisk ?? (bypassApp ? "high" : "medium");
 
-      if (risk === "critical" || risk === "high" || bypassApp) hasHighRisk = true;
+    if (risk === "critical" || risk === "high" || bypassApp) hasHighRisk = true;
 
-      appDetails.push({
-        appId,
-        displayName: name,
-        purpose,
-        exclusionReason: reason,
-        risk,
-      });
-    }
+    appDetails.push({
+      appId,
+      displayName: name,
+      purpose,
+      exclusionReason: reason,
+      risk,
+    });
   }
 
   if (appDetails.length === 0) return [];
