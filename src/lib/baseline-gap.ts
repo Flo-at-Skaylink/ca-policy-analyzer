@@ -113,6 +113,10 @@ export function analyzeBaselineGaps(
 
   for (const match of templateResult.matches) {
     if (match.status === "not-applicable") continue;
+    // Lewis Barry templates are a supplemental baseline only — exclude them
+    // from the built-in gap analysis so they don't appear as gaps/drift when
+    // the user hasn't selected the Lewis Barry baseline.
+    if (match.template.category === "lewis-barry") continue;
 
     const tplPersona = detectPersona(match.template.displayName);
 
@@ -231,8 +235,9 @@ export function analyzeBaselineGaps(
   const tenantOnly = entries.filter((e) => e.kind === "tenant-only").length;
 
   // Coverage = (present + 0.5 × partial) / applicable_templates
+  // Exclude lewis-barry supplemental templates from the coverage calculation.
   const applicable = templateResult.matches.filter(
-    (m) => m.status !== "not-applicable"
+    (m) => m.status !== "not-applicable" && m.template.category !== "lewis-barry"
   );
   const present = applicable.filter((m) => m.status === "present").length;
   const partial = applicable.filter((m) => m.status === "partial").length;
