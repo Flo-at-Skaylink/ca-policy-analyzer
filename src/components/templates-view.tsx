@@ -45,6 +45,9 @@ interface TemplatesViewProps {
   onLoadGitHub?: (url: string, fallbackUrl?: string) => Promise<string | null>;
   /** Callback to reset back to built-in templates */
   onResetTemplates?: () => void;
+  /** Controlled baseline category filter (lifted to page.tsx so gap view stays in sync) */
+  categoryFilter?: TemplateCategory | null;
+  onCategoryFilterChange?: (v: TemplateCategory | null) => void;
 }
 
 // ─── Status Badge ────────────────────────────────────────────────────────────
@@ -549,9 +552,16 @@ export function TemplatesView({
   customRepoDisplay,
   onLoadGitHub,
   onResetTemplates,
+  categoryFilter: categoryFilterProp,
+  onCategoryFilterChange,
 }: TemplatesViewProps) {
   const [statusFilter, setStatusFilter] = useState<MatchStatus | "all">("all");
-  const [categoryFilter, setCategoryFilter] = useState<TemplateCategory | null>(null);
+  const [categoryFilterInternal, setCategoryFilterInternal] = useState<TemplateCategory | null>(null);
+  const categoryFilter = categoryFilterProp !== undefined ? categoryFilterProp : categoryFilterInternal;
+  const setCategoryFilter = (v: TemplateCategory | null) => {
+    setCategoryFilterInternal(v);
+    onCategoryFilterChange?.(v);
+  };
   const [showGitHubInput, setShowGitHubInput] = useState(false);
   const [gitHubUrl, setGitHubUrl] = useState("");
   const [loading, setLoading] = useState(false);
