@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { useIsAuthenticated, useMsal } from "@azure/msal-react";
 import { loadTenantContext, TenantContext } from "@/lib/graph-client";
 import { analyzeAllPolicies, AnalysisResult, calculateCompositeScore, CompositeScoreResult } from "@/lib/analyzer";
@@ -51,10 +51,18 @@ export default function Home() {
   const [baselineCategory, setBaselineCategory] = useState<TemplateCategory | null>(null);
   const [logoBase64, setLogoBase64] = useState<string | null>(null);
 
-  const setAppMode = useCallback((mode: "offline" | "live") => {
-    localStorage.setItem("caAnalyzerMode", mode);
+  const setAppMode = useCallback((mode: "offline" | "live" | null) => {
+    if (mode === null) {
+      localStorage.removeItem("caAnalyzerMode");
+    } else {
+      localStorage.setItem("caAnalyzerMode", mode);
+    }
     window.dispatchEvent(new CustomEvent("ca-analyzer-mode", { detail: mode }));
   }, []);
+
+  useEffect(() => {
+    if (!result) setAppMode(null);
+  }, [result, setAppMode]);
 
   const executeAnalysis = useCallback(async (ctx: TenantContext) => {
     setContext(ctx);
@@ -209,9 +217,19 @@ export default function Home() {
       }
       const text = await file.text();
       const parsed = JSON.parse(text) as OfflineExportPayload;
+
+      const asAny = parsed as Record<string, unknown>;
+      if (asAny.policyResults !== undefined || asAny.findings !== undefined || asAny.overallScore !== undefined) {
+        throw new Error(
+          "This looks like an analysis results export, not a raw policy export. " +
+          "To use offline mode, export your policies directly from PowerShell using " +
+          "Get-MgIdentityConditionalAccessPolicy | ConvertTo-Json -Depth 10, then upload that file."
+        );
+      }
+
       const ctx = buildTenantContextFromOfflineExport(parsed);
       if (ctx.policies.length === 0) {
-        throw new Error("No Conditional Access policies found in the uploaded JSON export.");
+        throw new Error("No Conditional Access policies found. Make sure you're uploading a raw Graph PowerShell export (Get-MgIdentityConditionalAccessPolicy | ConvertTo-Json -Depth 10).");
       }
       setAppMode("offline");
       await executeAnalysis(ctx);
@@ -261,9 +279,6 @@ export default function Home() {
         </p>
         <div className="mt-8 grid w-full max-w-4xl gap-4 text-left md:grid-cols-2">
           <div className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-5">
-            <div className="mb-2 inline-flex rounded-full border border-blue-500/30 bg-blue-500/10 px-2.5 py-1 text-xs font-medium text-blue-300">
-              Recommended
-            </div>
             <p className="text-sm font-medium text-gray-100">Offline export import</p>
             <p className="mt-1 text-xs text-gray-400">
               Default mode for least privilege and fully offline analysis. Export once, then upload JSON.
