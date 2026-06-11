@@ -370,13 +370,13 @@ export const KNOWN_BASELINES: KnownBaseline[] = [
   },
   {
     id: "joeyv",
-    label: "Joey Verlinden — Conditional Access Baseline",
+    label: "Joey Verlinden — Conditional Access Baseline 2026.6.1",
     author: "Joey Verlinden (MVP)",
     // Point at the Config/ root so the loader picks up the full restore bundle:
-    // ConditionalAccess/ (67 policies) + Groups/ (33 exclusion groups) +
+    // ConditionalAccess/ (38 policies) + Groups/ (36 exclusion groups) +
     // NamedLocations/ (allowed-countries lists) + MigrationTable.json.
     repoUrl:
-      "https://github.com/j0eyv/ConditionalAccessBaseline/tree/main/Config",
+      "https://github.com/j0eyv/ConditionalAccessBaseline/tree/2026.6.1/Config",
     description:
       "Persona-based baseline aligned with Microsoft's Zero Trust guidance and Claus Jespersen's framework. Includes a full DCToolbox-style restore bundle (policies + exclusion groups + named locations + migration table).",
     source: "joey",

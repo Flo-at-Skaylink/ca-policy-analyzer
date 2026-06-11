@@ -5,6 +5,12 @@ All notable changes to the CA Policy Analyzer will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.21] - 2026-06-11
+
+### Changed
+
+- **Joey Verlinden preset updated to release 2026.6.1** — preset URL now points at the `2026.6.1` tag (`https://github.com/j0eyv/ConditionalAccessBaseline/tree/2026.6.1/Config`) instead of `main`. The new release ships 38 ConditionalAccess policies (down from 67 — several CA005/CA006 variants consolidated), 36 exclusion groups, and 3 named locations. Label updated to "Joey Verlinden — Conditional Access Baseline 2026.6.1".
+
 ## [1.15.20] - 2026-06-02
 
 ### Changed
