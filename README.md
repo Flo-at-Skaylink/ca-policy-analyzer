@@ -27,6 +27,10 @@ The app runs **100% in your browser** — your data never leaves your machine. I
 
 > Full version history lives in [CHANGELOG.md](CHANGELOG.md).
 
+### v1.15.21 — Joey Verlinden Baseline Updated to 2026.6.1 (June 11, 2026)
+
+- **Joey Verlinden preset updated to release [2026.6.1](https://github.com/j0eyv/ConditionalAccessBaseline/releases/tag/2026.6.1)** — preset now points at the `2026.6.1` tag instead of `main`. New release ships 38 ConditionalAccess policies (consolidated from 67), 36 exclusion groups, 3 named locations, and a MigrationTable. The CA005/CA006 app protection variants were merged, and new **CA501–CA505 Agents** policies cover Microsoft Entra Agent Identities (Workload Identities).
+
 ### v1.15 — Lewis Barry Baseline, Policy Fixes & Improvements (June 2, 2026)
 
 **Major additions & changes across v1.15.x:**
