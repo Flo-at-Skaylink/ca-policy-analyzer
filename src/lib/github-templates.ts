@@ -376,14 +376,20 @@ function buildFingerprint(
   if (includeUsers.includes("All")) fp.targetsAllUsers = true;
   if (includeRoles.length > 0) fp.targetRoles = includeRoles;
 
-  // Agent identity targeting
+  // Agent identity targeting — check both older clientApplications field and
+  // newer conditions.agents.includeAgentUsers field (used by Joey's 2026 policies)
   const clientApplications = conditions?.clientApplications as Record<string, unknown> | undefined;
   const agentIdPrincipals = (clientApplications?.includeAgentIdServicePrincipals as string[]) ?? [];
-  if (agentIdPrincipals.length > 0) fp.targetsAgentIdentities = true;
+  const agentsBlock = conditions?.agents as Record<string, unknown> | undefined;
+  const includeAgentUsers = (agentsBlock?.includeAgentUsers as string[]) ?? [];
+  if (agentIdPrincipals.length > 0 || includeAgentUsers.length > 0) fp.targetsAgentIdentities = true;
 
-  // Agent identity risk level (single string value, not array)
+  // Agent identity risk level — may be a single value ("high") or
+  // comma-separated ("medium,high"); always split so each level is its own element.
   const agentIdRisk = conditions?.agentIdRiskLevels as string | undefined;
-  if (agentIdRisk) fp.agentIdRiskLevels = [agentIdRisk.toLowerCase()];
+  if (agentIdRisk) {
+    fp.agentIdRiskLevels = agentIdRisk.toLowerCase().split(",").map((s) => s.trim()).filter(Boolean);
+  }
 
   const signInRisk = (conditions?.signInRiskLevels as string[]) ?? [];
   const userRisk = (conditions?.userRiskLevels as string[]) ?? [];

@@ -163,7 +163,11 @@ function scorePolicyMatch(
  | { includeAgentIdServicePrincipals?: string[] }
  | null | undefined;
  const agentPrincipals = clientApps?.includeAgentIdServicePrincipals ?? [];
- if (agentPrincipals.length > 0) {
+ const agentsBlock = (policy.conditions as Record<string, unknown>).agents as
+ | { includeAgentUsers?: string[] }
+ | null | undefined;
+ const agentUsers = agentsBlock?.includeAgentUsers ?? [];
+ if (agentPrincipals.length > 0 || agentUsers.length > 0) {
  matchedWeight += 15;
  } else {
  differences.push(
@@ -275,10 +279,19 @@ function scorePolicyMatch(
  // ── Agent identity risk levels (weight: 20) ──────────────────────
  if (fingerprint.agentIdRiskLevels && fingerprint.agentIdRiskLevels.length > 0) {
  totalWeight += 20;
- const policyAgentRisk = ((policy.conditions as Record<string, unknown>).agentIdRiskLevels as string | undefined ?? "").toLowerCase();
+ const policyAgentRiskStr = ((policy.conditions as Record<string, unknown>).agentIdRiskLevels as string | undefined ?? "").toLowerCase();
+ // Split both sides — the API may return a comma-separated string ("medium,high")
+ const policyAgentRisks = new Set(policyAgentRiskStr.split(",").map((s) => s.trim()).filter(Boolean));
  const templateRisk = new Set(fingerprint.agentIdRiskLevels.map((r) => r.toLowerCase()));
- if (policyAgentRisk && templateRisk.has(policyAgentRisk)) {
+ const overlap = [...templateRisk].filter((r) => policyAgentRisks.has(r));
+ if (overlap.length > 0) {
  matchedWeight += 20;
+ if (overlap.length < templateRisk.size) {
+ const missing = [...templateRisk].filter((r) => !policyAgentRisks.has(r));
+ differences.push(
+ `Agent risk: template requires [${[...templateRisk].join(", ")}], policy only covers [${[...policyAgentRisks].join(", ")}] — missing: ${missing.join(", ")}`
+ );
+ }
  } else {
  differences.push(
  `Agent risk: template requires [${fingerprint.agentIdRiskLevels.join(", ")}], not configured`
