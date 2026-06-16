@@ -19,6 +19,7 @@ import { analyzeNamedLocations, LocationAnalysisResult } from "@/lib/location-an
 import { analyzePersonaCoverage, PersonaCoverageResult } from "@/lib/persona-coverage";
 import { buildZeroTrustScorecard, ZeroTrustScorecard } from "@/lib/zero-trust-scorecard";
 import { analyzeBaselineGaps, BaselineGapResult } from "@/lib/baseline-gap";
+import { TemplateCategory } from "@/data/policy-templates";
 import { BaselineGapView } from "@/components/baseline-gap-view";
 import { exportToExcel, exportToPowerPoint, loadDefaultLogo } from "@/lib/export-utils";
 import { Shield, Loader2, Play, Download, RefreshCw, LayoutDashboard, FileText, AlertTriangle, Layers, CheckSquare, BookOpen, FileSpreadsheet, Presentation, MapPin, Users, GitCompareArrows } from "lucide-react";
@@ -44,13 +45,14 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<ViewTab>("dashboard");
   const [error, setError] = useState<string | null>(null);
   const [hideMicrosoft, setHideMicrosoft] = useState(false);
+  const [baselineCategory, setBaselineCategory] = useState<TemplateCategory | null>(null);
   const [logoBase64, setLogoBase64] = useState<string | null>(null);
 
   /** Lazy-derived baseline gap report. Recomputes whenever templates or context change. */
   const baselineGapResult: BaselineGapResult | null = useMemo(() => {
     if (!context || !templateResult) return null;
-    return analyzeBaselineGaps(context, templateResult);
-  }, [context, templateResult]);
+    return analyzeBaselineGaps(context, templateResult, baselineCategory);
+  }, [context, templateResult, baselineCategory]);
 
   /** Load templates from a custom GitHub repo and re-run template analysis */
   const handleLoadGitHub = useCallback(async (url: string, fallbackUrl?: string): Promise<string | null> => {
@@ -398,10 +400,10 @@ export default function Home() {
         <FindingsList findings={result.findings} title="All Findings" />
       )}
       {activeTab === "templates" && templateResult && (
-        <TemplatesView result={templateResult} customRepoDisplay={customRepoDisplay} onLoadGitHub={handleLoadGitHub} onResetTemplates={handleResetTemplates} />
+        <TemplatesView result={templateResult} customRepoDisplay={customRepoDisplay} onLoadGitHub={handleLoadGitHub} onResetTemplates={handleResetTemplates} categoryFilter={baselineCategory} onCategoryFilterChange={setBaselineCategory} />
       )}
       {activeTab === "baseline" && baselineGapResult && (
-        <BaselineGapView result={baselineGapResult} baselineLabel={customRepoDisplay ?? "built-in template set"} templateResult={templateResult} />
+        <BaselineGapView result={baselineGapResult} baselineLabel={baselineCategory === "lewis-barry" ? "Lewis Barry - Baseline" : (customRepoDisplay ?? "built-in template set")} templateResult={templateResult} />
       )}
       {activeTab === "cis" && cisResult && (
         <CISView result={cisResult} />

@@ -5,6 +5,129 @@ All notable changes to the CA Policy Analyzer will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.21] - 2026-06-11
+
+### Changed
+
+- **Joey Verlinden preset updated to release 2026.6.1** — preset URL now points at the `2026.6.1` tag (`https://github.com/j0eyv/ConditionalAccessBaseline/tree/2026.6.1/Config`) instead of `main`. The new release ships 38 ConditionalAccess policies (down from 67 — several CA005/CA006 variants consolidated), 36 exclusion groups, and 3 named locations. Label updated to "Joey Verlinden — Conditional Access Baseline 2026.6.1".
+
+## [1.15.20] - 2026-06-02
+
+### Changed
+
+- **Template Coverage header updates dynamically per selected baseline** — score ring, Present/Partial/Missing counts, and the applicable-policies subtitle now recalculate live based on whichever baseline is selected in the dropdown. Selecting **Lewis Barry - Baseline** shows scores and counts scoped to his 13 templates; switching back to **Jon Hope - Baseline** restores the original tenant-wide score.
+
+## [1.15.19] - 2026-06-02
+
+### Changed
+
+- **Dropdown labels standardised** — both options now follow the same pattern: `🏠 Jon Hope - Baseline` and `🧰 Lewis Barry - Baseline`.
+
+## [1.15.18] - 2026-06-02
+
+### Changed
+
+- **Lewis Barry template display names updated to match conditionalaccess.uk exactly** — all 13 templates renamed from the `LB - CA0X - ...` convention to the exact names on the site (e.g. `CA01: MFA all users all resources`, `CA02: Block Legacy Auth`, `CA06: Block Code Flow`, `CA08: User Risk - High - Reset PW`).
+
+## [1.15.17] - 2026-06-02
+
+### Fixed
+
+- **Lewis Barry templates excluded from coverage score and counts** — `lewis-barry` category templates are now filtered out of `presentCount`, `partialCount`, `missingCount`, `totalTemplates`, and the weighted `coverageScore` in [src/lib/template-matcher.ts](src/lib/template-matcher.ts). They are a supplemental view only and must not affect the main tenant score.
+
+### Changed
+
+- **Built-in baselines dropdown default** — first option is now `🏠 Jon Hope - Baseline` (default); `🧰 Lewis Barry - Baseline` is the second option.
+
+## [1.15.16] - 2026-06-02
+
+### Changed
+
+- **Lewis Barry templates hidden from main template list** — excluded from the default view and only shown when the dropdown is set to that baseline.
+- **Built-in baselines UI changed to `<select>` dropdown** — replaces the toggle button. Selecting Lewis Barry filters the list and shows a "Clear" link.
+- **Renamed to "Lewis Barry - Baseline"** — updated in `CATEGORY_META`, dropdown, and description.
+
+## [1.15.15] - 2026-06-02
+
+### Added
+
+- **Lewis Barry built-in baseline — 13 templates** (`CA01`–`CA12` + `CA11B`) sourced from [conditionalaccess.uk](https://conditionalaccess.uk/blog/some-policies-i-use-in-conditional-access/) by Lewis Barry (Microsoft MVP). New `"lewis-barry"` `TemplateCategory` with `CATEGORY_META` entry (`🧰`). All templates carry a `prerequisites` field crediting Lewis with a link to his article.
+- **`DeploymentPolicy.grantControls` extended** — added optional `authenticationStrength?: { id: string; displayName?: string }` for CA10 (FIDO2) and CA11B (TAP).
+
+## [1.15.14] - 2026-06-02
+
+### Removed
+
+- **`intune-grant-mobile-desktop` template removed** — redundant with the separate `intune-grant-mobile` and `intune-grant-desktop` templates; caused duplicate matches and inflated coverage counts.
+
+## [1.15.13] - 2026-06-02
+
+### Fixed
+
+- **`INTUNE - GRANT - Require App Protection (Mobile)` fingerprint fixed** — was cross-matching the compliant-device template. Now checks `builtInControls` for `"compliantApplication"` (weight 25) with a negative signal (weight −20) when `"compliantDevice"` is present without `"compliantApplication"`.
+
+## [1.15.12] - 2026-06-02
+
+### Added
+
+- **`ZTCA - BLOCK - AuthTransfer` template** — covers policies that block the `authenticationTransfer` authentication flow.
+
+## [1.15.11] - 2026-06-02
+
+### Fixed
+
+- **`ZTCA - BLOCK - DeviceCodeFlow` fingerprint no longer matches auth-transfer policies** — added explicit `deviceCodeFlow` assertion (weight 30) and a negative signal (weight −25) when `authenticationTransfer` is present without `deviceCodeFlow`.
+
+## [1.15.10] - 2026-06-02
+
+### Fixed
+
+- **`AGENT - BLOCK - NonTrustedAgents` fingerprint corrected** — was checking `includeUsers: ["All"]` but the real policy uses `includeUsers: ["None"]` with scoping via `clientApplications`. Fixed fingerprint and deployment JSON.
+
+## [1.15.9] - 2026-06-02
+
+### Fixed
+
+- **`P2 - USER RISK` template no longer cross-matches sign-in risk policy** — added `userRiskLevels` check (weight 30) with mutual negative signals between user-risk and sign-in risk templates.
+
+## [1.15.8] - 2026-06-02
+
+### Fixed
+
+- **`AGENT - BLOCK - NonTrustedAgents` deployment JSON corrected** — `grantControls` was `null`; updated to `{ operator: "OR", builtInControls: ["block"] }`.
+
+## [1.15.7] - 2026-06-02
+
+### Fixed
+
+- **`P2 - SIGN-IN RISK` fingerprint corrected** — was missing the `signInRiskLevels` check entirely, causing it to match the user-risk policy at higher confidence. Added `signInRiskLevels: ["high", "medium"]` (weight 30) with a negative signal when `userRiskLevels` is present without `signInRiskLevels`.
+
+## [1.15.6] - 2026-06-02
+
+### Fixed
+
+- **App exclusion count now includes unrecognized app IDs** — `checkServicePrincipalExclusions` in [src/lib/analyzer.ts](src/lib/analyzer.ts) previously silently dropped any excluded app ID that was not found in the service principal map, `CA_BYPASS_APPS`, or `APP_DESCRIPTION_MAP`, causing the finding title to report fewer apps than the policy actually excluded (e.g. "4 app(s) excluded" when the policy had 5 excluded apps). The guard has been removed so every excluded app ID is always included in the finding. Unresolved IDs fall back to displaying the raw app ID as the name with a purpose of "Unrecognized app ID — not found in service principal list or known app catalog."
+
+## [1.15.5] - 2026-06-02
+
+### Fixed
+
+- **`AGENT - BLOCK - HighRiskAgents` template corrected for the Graph API agent identity fields** — the fingerprint was matching wrong policies at 71% (Device Code, Legacy Auth, Countries) because it checked `signInRiskLevels: ["high"]`, which is a completely different Graph API field from the one used by agent CA policies. The real `IAC - AGENT - BLOCK - HighRiskAgent` policy in the Graph API uses `conditions.agentIdRiskLevels: "high"` (a preview field, string not array) and `conditions.clientApplications.includeAgentIdServicePrincipals: ["All"]`, with `conditions.users.includeUsers: ["None"]` since principal scoping is done via `clientApplications` not `users`. All four relevant files were updated:
+  - **[src/lib/graph-client.ts](src/lib/graph-client.ts)** — added `agentIdRiskLevels?: string` to `ConditionalAccessConditionSet` and `includeAgentIdServicePrincipals?: string[]` / `excludeAgentIdServicePrincipals?: string[]` to `ClientApplications`; `agentIdRiskLevels` is now parsed in `parsePolicy`.
+  - **[src/data/policy-templates.ts](src/data/policy-templates.ts)** — added `agentIdRiskLevels?: string[]` and `targetsAgentIdentities?: boolean` to `TemplateFingerprint`; added `agentIdRiskLevels?: string` to `DeploymentPolicy` conditions type; fixed the `agent-block-high-risk` fingerprint to use the new fields instead of `signInRiskLevels`; fixed `deploymentJson` to use `includeUsers: ["None"]` and `agentIdRiskLevels: "high"`.
+  - **[src/lib/template-matcher.ts](src/lib/template-matcher.ts)** — added `targetsAgentIdentities` check (weight 15) reading `clientApplications.includeAgentIdServicePrincipals`; added `agentIdRiskLevels` check (weight 20) reading `conditions.agentIdRiskLevels`.
+  - **[src/lib/github-templates.ts](src/lib/github-templates.ts)** — fingerprint builder now extracts `agentIdRiskLevels` and `includeAgentIdServicePrincipals` from GitHub policy JSON so custom-repo agent policies are fingerprinted correctly.
+
+## [1.15.4] - 2026-06-02
+
+### Added
+
+- **Prerequisites field for templates with external dependencies** — `PolicyTemplate` in [src/data/policy-templates.ts](src/data/policy-templates.ts) now has an optional `prerequisites?: string` field. The `INTUNE - SESSION - Block File Downloads On Unmanaged Devices` template uses it to surface a visible warning that **Microsoft Defender for Cloud Apps (MDCA)** must be active and Office 365 apps onboarded before the policy can enforce file-download blocking. [src/components/templates-view.tsx](src/components/templates-view.tsx) renders the field as an amber ⚠ "Prerequisites" card between the "Why this matters" and "CIS Controls" sections.
+
+### Fixed
+
+- **GitHub template loader no longer recurses into `Test/` subdirectories** — `fetchJsonFiles` in [src/lib/github-templates.ts](src/lib/github-templates.ts) previously loaded policy files from every subdirectory of the configured repo, including `Test/` and `New/`. It now skips any directory whose name matches `test`, `tests`, `scratch`, `temp`, or `tmp` (case-insensitive), preventing test/draft policies from appearing as gap-analysis templates.
+
 ## [1.15.3] - 2026-05-30
 
 ### Added

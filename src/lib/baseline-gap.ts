@@ -103,7 +103,10 @@ function shortDiff(differences: string[]): string[] {
 
 export function analyzeBaselineGaps(
   context: TenantContext,
-  templateResult: TemplateAnalysisResult
+  templateResult: TemplateAnalysisResult,
+  /** When set, only templates in this category are included. When null/undefined,
+   * lewis-barry templates are excluded and all other templates are included. */
+  baselineCategory?: string | null
 ): BaselineGapResult {
   const entries: BaselineGapEntry[] = [];
 
@@ -113,6 +116,14 @@ export function analyzeBaselineGaps(
 
   for (const match of templateResult.matches) {
     if (match.status === "not-applicable") continue;
+    // Filter to the selected baseline category. When no baseline is selected
+    // (Jon Hope default) exclude lewis-barry; when lewis-barry is selected
+    // show only lewis-barry templates.
+    if (baselineCategory) {
+      if (match.template.category !== baselineCategory) continue;
+    } else {
+      if (match.template.category === "lewis-barry") continue;
+    }
 
     const tplPersona = detectPersona(match.template.displayName);
 
@@ -231,9 +242,12 @@ export function analyzeBaselineGaps(
   const tenantOnly = entries.filter((e) => e.kind === "tenant-only").length;
 
   // Coverage = (present + 0.5 × partial) / applicable_templates
-  const applicable = templateResult.matches.filter(
-    (m) => m.status !== "not-applicable"
-  );
+  // Filter to the selected baseline category (same logic as the loop above).
+  const applicable = templateResult.matches.filter((m) => {
+    if (m.status === "not-applicable") return false;
+    if (baselineCategory) return m.template.category === baselineCategory;
+    return m.template.category !== "lewis-barry";
+  });
   const present = applicable.filter((m) => m.status === "present").length;
   const partial = applicable.filter((m) => m.status === "partial").length;
   const coverageScore =

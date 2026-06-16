@@ -59,7 +59,12 @@ export interface ConditionalAccessPolicy {
       includeServicePrincipals: string[];
       excludeServicePrincipals: string[];
       servicePrincipalFilter?: { mode: string; rule: string };
+      /** Agent identity principal scoping (Preview) */
+      includeAgentIdServicePrincipals?: string[];
+      excludeAgentIdServicePrincipals?: string[];
     };
+    /** Agent identity risk levels (Preview) — separate from signInRiskLevels */
+    agentIdRiskLevels?: string;
     insiderRiskLevels?: string;
     authenticationFlows?: {
       transferMethods?: string;
@@ -459,6 +464,7 @@ function normalizePolicy(p: any): ConditionalAccessPolicy {
       servicePrincipalRiskLevels: (cond as Record<string, unknown>).servicePrincipalRiskLevels as string[] | undefined,
       devices: (cond as Record<string, unknown>).devices as ConditionalAccessPolicy["conditions"]["devices"],
       clientApplications: (cond as Record<string, unknown>).clientApplications as ConditionalAccessPolicy["conditions"]["clientApplications"],
+      agentIdRiskLevels: (cond as Record<string, unknown>).agentIdRiskLevels as string | undefined,
       insiderRiskLevels: (cond as Record<string, unknown>).insiderRiskLevels as string | undefined,
       authenticationFlows: (cond as Record<string, unknown>).authenticationFlows as ConditionalAccessPolicy["conditions"]["authenticationFlows"],
     },

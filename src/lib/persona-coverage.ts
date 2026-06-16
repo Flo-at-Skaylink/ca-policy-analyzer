@@ -153,7 +153,13 @@ function hasGrantCompliantDevice(p: ConditionalAccessPolicy): boolean {
 }
 
 function hasSignInRisk(p: ConditionalAccessPolicy): boolean {
-  return (p.conditions.signInRiskLevels?.length ?? 0) > 0;
+  // Standard sign-in risk levels (all user types)
+  if ((p.conditions.signInRiskLevels?.length ?? 0) > 0) return true;
+  // Agent identity risk (Graph API preview field — agentIdRiskLevels is a
+  // string like "high" rather than an array, set alongside
+  // clientApplications.includeAgentIdServicePrincipals for agent CA policies).
+  if (p.conditions.agentIdRiskLevels) return true;
+  return false;
 }
 
 function hasUserRisk(p: ConditionalAccessPolicy): boolean {
@@ -187,16 +193,43 @@ function hasCountryBlock(p: ConditionalAccessPolicy): boolean {
   return hasLocationCondition(p) && hasGrantBlock(p);
 }
 
-function hasNonCorpNetworkBlock(p: ConditionalAccessPolicy): boolean {
-  // Heuristic: location condition with excludeLocations (e.g. "AllTrusted")
+function hasNonCorpNetworkBlock(
+  p: ConditionalAccessPolicy,
+  ctx?: TenantContext
+): boolean {
+  // Heuristic: location condition that restricts to known/trusted locations
   // combined with a Block grant.
   const loc = p.conditions.locations;
   if (!loc) return false;
-  const excludesTrusted = (loc.excludeLocations ?? []).some(
+  if (!hasGrantBlock(p)) return false;
+
+  const excludeIds = loc.excludeLocations ?? [];
+  const includeIds = loc.includeLocations ?? [];
+
+  // 1. Explicit "AllTrusted" sentinel or any ID whose display name contains
+  //    "trusted" (covers tenants that name their location "Trusted IPs" etc.)
+  const excludesTrustedSentinel = excludeIds.some(
     (l) => l === "AllTrusted" || l.toLowerCase().includes("trusted")
   );
-  const includesAll = (loc.includeLocations ?? []).includes("All");
-  return (excludesTrusted || includesAll) && hasGrantBlock(p);
+  if (excludesTrustedSentinel) return true;
+
+  // 2. Check against actual named locations in the tenant that are marked
+  //    isTrusted — covers policies that exclude a trusted location by GUID.
+  if (ctx?.namedLocations) {
+    const trustedIds = new Set(
+      ctx.namedLocations
+        .filter((nl) => nl.isTrusted)
+        .map((nl) => nl.id)
+    );
+    if (excludeIds.some((id) => trustedIds.has(id))) return true;
+  }
+
+  // 3. "All locations" include + any non-empty exclude + Block is a network
+  //    restriction pattern (e.g. include All, exclude a specific named location
+  //    like a corp IP range — inverse allow-list).
+  if (includeIds.includes("All") && excludeIds.length > 0) return true;
+
+  return false;
 }
 
 // Phishing-resistant detection lives in src/lib/phishing-resistant.ts so the
@@ -239,6 +272,10 @@ function policyPersonas(p: ConditionalAccessPolicy): Set<Persona> {
   const out = new Set<Persona>();
   const named = detectPersona(p.displayName);
   if (named !== "unknown") out.add(named);
+  // A general service-account policy (corpserviceaccounts) also covers the
+  // Microsoft 365 Service Accounts persona — both need the same network
+  // restriction control and a single "ServiceAccounts" policy satisfies both.
+  if (named === "corpserviceaccounts") out.add("microsoft365serviceaccounts");
 
   const users = p.conditions.users;
   const includesAllUsers = users.includeUsers.includes("All");

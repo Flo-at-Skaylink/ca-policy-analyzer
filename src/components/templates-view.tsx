@@ -45,6 +45,9 @@ interface TemplatesViewProps {
   onLoadGitHub?: (url: string, fallbackUrl?: string) => Promise<string | null>;
   /** Callback to reset back to built-in templates */
   onResetTemplates?: () => void;
+  /** Controlled baseline category filter (lifted to page.tsx so gap view stays in sync) */
+  categoryFilter?: TemplateCategory | null;
+  onCategoryFilterChange?: (v: TemplateCategory | null) => void;
 }
 
 // ─── Status Badge ────────────────────────────────────────────────────────────
@@ -152,6 +155,16 @@ function TemplateCard({ match }: { match: TemplateMatch }) {
             </h5>
             <p className="text-sm text-gray-300">{t.rationale}</p>
           </div>
+
+          {/* Prerequisites */}
+          {t.prerequisites && (
+            <div className="rounded border border-amber-500/20 bg-amber-500/5 px-3 py-2">
+              <h5 className="text-xs font-medium text-amber-400 uppercase mb-1">
+                ⚠ Prerequisites
+              </h5>
+              <p className="text-xs text-amber-200/80">{t.prerequisites}</p>
+            </div>
+          )}
 
           {/* CIS Mapping */}
           {t.cisControls && t.cisControls.length > 0 && (
@@ -539,8 +552,16 @@ export function TemplatesView({
   customRepoDisplay,
   onLoadGitHub,
   onResetTemplates,
+  categoryFilter: categoryFilterProp,
+  onCategoryFilterChange,
 }: TemplatesViewProps) {
   const [statusFilter, setStatusFilter] = useState<MatchStatus | "all">("all");
+  const [categoryFilterInternal, setCategoryFilterInternal] = useState<TemplateCategory | null>(null);
+  const categoryFilter = categoryFilterProp !== undefined ? categoryFilterProp : categoryFilterInternal;
+  const setCategoryFilter = (v: TemplateCategory | null) => {
+    setCategoryFilterInternal(v);
+    onCategoryFilterChange?.(v);
+  };
   const [showGitHubInput, setShowGitHubInput] = useState(false);
   const [gitHubUrl, setGitHubUrl] = useState("");
   const [loading, setLoading] = useState(false);
@@ -567,10 +588,35 @@ export function TemplatesView({
     setLoadError(null);
   };
 
-  const filteredMatches =
-    statusFilter === "all"
-      ? result.matches
-      : result.matches.filter((m) => m.status === statusFilter);
+  const filteredMatches = result.matches
+    .filter((m) => statusFilter === "all" || m.status === statusFilter)
+    .filter((m) =>
+      categoryFilter === null
+        ? m.template.category !== "lewis-barry"
+        : m.template.category === categoryFilter
+    );
+
+  // Compute display metrics for the active baseline (ignoring status filter)
+  const baselineMatches = result.matches.filter((m) =>
+    categoryFilter === null
+      ? m.template.category !== "lewis-barry"
+      : m.template.category === categoryFilter
+  );
+  const displayNA = baselineMatches.filter((m) => m.status === "not-applicable").length;
+  const displayApplicable = baselineMatches.filter((m) => m.status !== "not-applicable");
+  const displayTotal = baselineMatches.length;
+  const displayPresent = displayApplicable.filter((m) => m.status === "present").length;
+  const displayPartial = displayApplicable.filter((m) => m.status === "partial").length;
+  const displayMissing = displayApplicable.filter((m) => m.status === "missing").length;
+  const priorityWeights: Record<string, number> = { critical: 3, recommended: 2, optional: 1 };
+  let dispTotal = 0; let dispEarned = 0;
+  for (const m of displayApplicable) {
+    const w = priorityWeights[m.template.priority] ?? 1;
+    dispTotal += w;
+    if (m.status === "present") dispEarned += w;
+    else if (m.status === "partial") dispEarned += w * 0.5;
+  }
+  const displayScore = dispTotal > 0 ? Math.round((dispEarned / dispTotal) * 100) : 0;
 
   // Group by category
   const categories = [
@@ -586,6 +632,7 @@ export function TemplatesView({
     "workload",
     "ztca",
     "agent",
+    "lewis-barry",
   ];
   categories.sort(
     (a, b) => categoryOrder.indexOf(a) - categoryOrder.indexOf(b)
@@ -611,31 +658,31 @@ export function TemplatesView({
       {/* Summary Header */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Card className="flex flex-col items-center justify-center p-6 sm:col-span-2">
-          <ScoreRing score={result.coverageScore} />
+          <ScoreRing score={displayScore} />
           <p className="mt-3 text-sm text-gray-400">Template Coverage</p>
           <p className="text-xs text-gray-600">
-            Based on {result.totalTemplates - result.notApplicableCount} applicable policies
-            {result.notApplicableCount > 0 && (
-              <span> ({result.notApplicableCount} excluded — license N/A)</span>
+            Based on {displayTotal - displayNA} applicable policies
+            {displayNA > 0 && (
+              <span> ({displayNA} excluded — license N/A)</span>
             )}
           </p>
         </Card>
 
         <Card className="flex flex-col items-center justify-center p-4">
           <div className="text-3xl font-bold text-emerald-400">
-            {result.presentCount}
+            {displayPresent}
           </div>
           <div className="text-xs text-gray-400 mt-1">Present</div>
         </Card>
         <Card className="flex flex-col items-center justify-center p-4">
           <div className="text-3xl font-bold text-amber-400">
-            {result.partialCount}
+            {displayPartial}
           </div>
           <div className="text-xs text-gray-400 mt-1">Partial</div>
         </Card>
         <Card className="flex flex-col items-center justify-center p-4">
           <div className="text-3xl font-bold text-red-400">
-            {result.missingCount}
+            {displayMissing}
           </div>
           <div className="text-xs text-gray-400 mt-1">Missing</div>
         </Card>
@@ -754,6 +801,45 @@ export function TemplatesView({
                 </a>
                 . When the loaded repo uses persona naming (Admins, Internals, Externals, Workload, etc.), policies group by persona automatically.
               </p>
+            </div>
+
+            {/* Built-in baselines (dropdown select) */}
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-gray-400">
+                Built-in baselines:
+              </p>
+              <select
+                value={categoryFilter === "lewis-barry" ? "lewis-barry" : ""}
+                onChange={(e) =>
+                  setCategoryFilter(
+                    e.target.value === "lewis-barry" ? "lewis-barry" : null
+                  )
+                }
+                className="rounded-md border border-gray-700 bg-gray-800 px-2.5 py-1.5 text-xs text-gray-200 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="">🏠 Jon Hope - Baseline</option>
+                <option value="lewis-barry">🧰 Lewis Barry - Baseline</option>
+              </select>
+              {categoryFilter === "lewis-barry" && (
+                <p className="text-[11px] text-gray-500">
+                  Showing Lewis Barry&apos;s baseline only.{" "}
+                  <a
+                    href="https://conditionalaccess.uk/blog/some-policies-i-use-in-conditional-access/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-400 hover:text-blue-300 underline"
+                  >
+                    conditionalaccess.uk
+                  </a>
+                  {" — "}
+                  <button
+                    onClick={() => setCategoryFilter(null)}
+                    className="text-gray-400 hover:text-gray-300 underline"
+                  >
+                    Clear
+                  </button>
+                </p>
+              )}
             </div>
             <div className="flex gap-2">
               <input
