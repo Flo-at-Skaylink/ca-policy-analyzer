@@ -19,7 +19,6 @@ import { TemplateAnalysisResult } from "./template-matcher";
 import { isFociApp, getFociApp, getFociFamily } from "@/data/foci-families";
 import {
   CA_IMMUNE_RESOURCE_MAP,
-  RESOURCE_EXCLUSION_BYPASSES,
   DEVICE_REGISTRATION_RESOURCE,
   WELL_KNOWN_APP_MAP,
   CA_BYPASS_APPS,
@@ -139,16 +138,16 @@ export function analyzeAllPolicies(context: TenantContext): AnalysisResult {
       ...checkResourceExclusion(policy, context),
       ...checkCAImmuneResources(policy),
       ...checkGrantControlOperator(policy),
-      ...checkDeviceRegistrationBypass(policy),
+      ...checkDeviceRegistrationBypass(policy, context),
       ...checkServicePrincipalExclusions(policy, context),
       ...checkMissingMFA(policy),
-      ...checkAllUsersAllApps(policy),
+      ...checkAllUsersAllApps(policy, breakGlass),
       ...checkReportOnlyState(policy),
       ...checkSessionControls(policy),
       ...checkLocationConditions(policy, context),
       ...checkLegacyAuth(policy),
       ...checkCABypassApps(policy, context),
-      ...checkUserAgentBypass(policy),
+      ...checkUserAgentBypass(policy, context),
       ...checkMicrosoftManagedPolicy(policy),
       ...checkPrivilegedRoleExclusions(policy, context),
       ...checkGuestExternalUserExclusions(policy, context),
@@ -177,6 +176,11 @@ export function analyzeAllPolicies(context: TenantContext): AnalysisResult {
 
   // Convert critical/high exclusion findings into the main findings list too
   for (const ef of exclusionFindings) {
+    // The "All resources" low-privilege scope change is already surfaced once by
+    // the tenant-wide Low-Privilege Scope Enforcement check; don't also promote
+    // the documented-exclusion entry into the main list (it remains visible in
+    // the exclusion-findings view).
+    if (ef.exclusion.id === "all-resources-exclusion-change") continue;
     if (ef.exclusion.severity === "critical" || ef.exclusion.severity === "high") {
       findings.push({
         id: nextFindingId(),
@@ -236,87 +240,18 @@ function checkFociExclusions(
 }
 
 // ─── Check: Resource Exclusion — Low-Privilege Scope Enforcement (March 2026) ─
+// Consolidated into the tenant-wide "Low-Privilege Scope Enforcement" check in
+// checkTenantWideGaps, which reports a single rollup across all affected
+// policies (and adjusts severity based on Azure AD Graph coverage). This
+// per-policy check previously duplicated that finding — plus the MS Learn
+// "all-resources-exclusion-change" documented-exclusion entry — producing the
+// same concern up to three times for one policy. No longer fires per-policy.
 
 function checkResourceExclusion(
-  policy: ConditionalAccessPolicy,
+  _policy: ConditionalAccessPolicy,
   _context: TenantContext
 ): Finding[] {
-  const findings: Finding[] = [];
-  const apps = policy.conditions.applications;
-  const includesAll = apps.includeApplications.includes("All");
-  const hasExclusions = apps.excludeApplications.length > 0;
-
-  if (!includesAll || !hasExclusions) return findings;
-
-  // ── Finding 1: Enforcement change awareness ──
-  // Microsoft is rolling out CA enforcement for low-privilege scopes (March-June 2026).
-  // Previously excluded scopes are now mapped to Azure AD Graph for enforcement.
-  // This may cause apps that ONLY request these scopes to receive CA challenges.
-  
-  const nativeClientScopes = RESOURCE_EXCLUSION_BYPASSES.map(b =>
-    `**${b.resourceName}**: ${b.bypassedScopes.join(", ")}`
-  ).join("\n");
-  
-  const confidentialClientScopes = RESOURCE_EXCLUSION_BYPASSES
-    .filter(b => b.confidentialClientScopes && b.confidentialClientScopes.length > b.bypassedScopes.length)
-    .map(b => {
-      const extraScopes = b.confidentialClientScopes!.filter(s => !b.bypassedScopes.includes(s));
-      return `**${b.resourceName}** (additional): ${extraScopes.join(", ")}`;
-    }).join("\n");
-
-  findings.push({
-    id: nextFindingId(),
-    policyId: policy.id,
-    policyName: policy.displayName,
-    severity: "medium",
-    category: "Resource Exclusion Bypass",
-    title: `${apps.excludeApplications.length} app(s) excluded from "All resources" — verify low-privilege scope enforcement rollout`,
-    description:
-      `This policy targets "All resources" but excludes ${apps.excludeApplications.length} app(s). ` +
-      `**Microsoft is actively changing how this works (March-June 2026 rollout).**\n\n` +
-      `**Legacy behavior (before March 2026):**\n` +
-      `When ANY resource was excluded, these low-privilege scopes were automatically exempt from CA enforcement, ` +
-      `allowing users to access basic directory data without meeting the policy's controls:\n\n` +
-      `*Native clients & SPAs:*\n${nativeClientScopes}\n\n` +
-      `*Confidential clients had a BROADER leak:*\n${confidentialClientScopes}\n\n` +
-      `**New behavior (rolling out March-June 2026):**\n` +
-      `These scopes are now evaluated as directory access and mapped to **Azure AD Graph** ` +
-      `(Windows Azure Active Directory, ID: 00000002-0000-0000-c000-000000000000) as the enforcement audience. ` +
-      `CA policies targeting "All resources" — even with exclusions — will now enforce on these scopes.\n\n` +
-      `**⚠️ Impact of this change:**\n` +
-      `- Apps that only request \`User.Read\`, \`openid\`, or \`profile\` may now prompt users for MFA or device compliance\n` +
-      `- Confidential client apps that were excluded and relied on \`User.Read.All\`, \`GroupMember.Read.All\`, ` +
-      `or \`Member.Read.Hidden\` will now face CA enforcement\n` +
-      `- Directory enumeration that previously bypassed CA (even for excluded apps) is now blocked\n` +
-      `- Custom apps not designed to handle CA challenges may break`,
-    recommendation:
-      `**Action Required:**\n\n` +
-      `1. **Check your tenant's rollout status**: The change is rolling out in phases. Sign in with a test account ` +
-      `and check if low-privilege scope requests now trigger CA challenges.\n\n` +
-      `2. **Review impacted apps**: Use the Usage & Insights report in Microsoft Entra Admin Center ` +
-      `(Entra ID → Monitoring & health → Usage & insights) to identify apps requesting only low-privilege scopes.\n\n` +
-      `3. **Review sign-in logs**: Filter by resource "Windows Azure Active Directory" ` +
-      `(00000002-0000-0000-c000-000000000000) to see which apps are now being evaluated.\n\n` +
-      `4. **Update custom apps**: Applications that only request scopes like \`openid\`, \`profile\`, \`User.Read\` ` +
-      `and are not designed to handle CA claims challenges must be updated per the ` +
-      `[Conditional Access developer guidance](https://learn.microsoft.com/entra/identity-platform/v2-conditional-access-dev-guide).\n\n` +
-      `5. **Best practice**: Remove resource exclusions entirely and use Microsoft's recommended baseline: ` +
-      `"All resources" with no exclusions. Create separate less-restrictive policies for apps that need exemptions.\n\n` +
-      `**Previously leaked confidential client scopes (now being enforced):**\n` +
-      `These scopes were especially dangerous because they allowed directory enumeration ` +
-      `without CA enforcement for excluded confidential client apps:\n` +
-      `- \`User.Read.All\` / \`User.ReadBasic.All\` — enumerate all users in the directory\n` +
-      `- \`People.Read.All\` — read organizational relationships\n` +
-      `- \`GroupMember.Read.All\` — enumerate group memberships including security groups\n` +
-      `- \`Member.Read.Hidden\` — read hidden group memberships\n\n` +
-      `**Learn More:**\n` +
-      `- [CA behavior change for All resources policies](https://learn.microsoft.com/entra/identity/conditional-access/concept-conditional-access-cloud-apps#new-conditional-access-behavior-when-an-all-resources-policy-has-a-resource-exclusion)\n` +
-      `- [Legacy CA behavior with exclusions](https://learn.microsoft.com/entra/identity/conditional-access/concept-conditional-access-cloud-apps#legacy-conditional-access-behavior-when-an-all-resources-policy-has-a-resource-exclusion)\n` +
-      `- [Recommended baseline MFA policy](https://learn.microsoft.com/entra/identity/conditional-access/policy-all-users-mfa-strength)`,
-    relatedIds: RESOURCE_EXCLUSION_BYPASSES.map((b) => b.resourceId),
-  });
-
-  return findings;
+  return [];
 }
 
 // ─── Check: CA-Immune Resources ──────────────────────────────────────────────
@@ -330,85 +265,234 @@ function checkCAImmuneResources(
 
 // ─── Check: Grant Control Operator (AND vs OR) ──────────────────────────────
 
+/**
+ * Controls that are considered equivalent strength when combined with OR.
+ * An OR *between members of the same group* is a Microsoft-recommended pattern
+ * (e.g. "require compliant device OR hybrid joined device"), not a
+ * "weakest control wins" weakness — there is no weaker control to downgrade to.
+ * Controls not listed here (mfa, passwordChange, …) are treated as their own
+ * distinct strength tier so mixing them with anything still flags.
+ */
+const EQUIVALENT_STRENGTH_GROUPS: Record<string, string> = {
+  compliantDevice: "device-trust",
+  domainJoinedDevice: "device-trust",
+  approvedApplication: "app-protection",
+  compliantApplication: "app-protection",
+};
+
+/** Human-friendly labels for built-in grant controls used in finding text. */
+const GRANT_CONTROL_LABELS: Record<string, string> = {
+  mfa: "Require MFA",
+  compliantDevice: "Require compliant device",
+  domainJoinedDevice: "Require Microsoft Entra hybrid joined device",
+  approvedApplication: "Require approved client app",
+  compliantApplication: "Require app protection policy",
+  passwordChange: "Require password change",
+};
+
+function labelControl(c: string): string {
+  return GRANT_CONTROL_LABELS[c] ?? c;
+}
+
 function checkGrantControlOperator(
   policy: ConditionalAccessPolicy
 ): Finding[] {
   const findings: Finding[] = [];
   const grant = policy.grantControls;
 
-  if (!grant || grant.builtInControls.length <= 1) return findings;
+  if (!grant || grant.operator !== "OR") return findings;
 
-  if (grant.operator === "OR") {
+  // "block" is terminal and never combined meaningfully with other controls;
+  // evaluate the OR only across the non-block controls.
+  const controls = grant.builtInControls.filter((c) => c !== "block");
+  if (controls.length <= 1) return findings;
+
+  // Determine how many distinct strength tiers the OR spans. Controls in a
+  // known equivalence group collapse to that group's name; anything else is
+  // its own tier keyed by the control itself.
+  const groupOf = (c: string) => EQUIVALENT_STRENGTH_GROUPS[c] ?? `unique:${c}`;
+  const distinctGroups = new Set(controls.map(groupOf));
+  const soleGroup = distinctGroups.size === 1 ? [...distinctGroups][0] : null;
+  const isAcceptedEquivalentOr =
+    soleGroup === "device-trust" || soleGroup === "app-protection";
+
+  const labels = controls.map(labelControl);
+
+  if (isAcceptedEquivalentOr) {
+    // OR between controls of equivalent strength — no weakest-link downgrade.
     findings.push({
       id: nextFindingId(),
       policyId: policy.id,
       policyName: policy.displayName,
-      severity: "high",
+      severity: "info",
       category: "Swiss Cheese Model",
-      title: 'Grant controls use "OR" — weakest control is effective',
+      title: 'Grant controls use "OR" between equivalent-strength controls — accepted pattern',
       description:
-        `This policy requires ${grant.builtInControls.join(" OR ")}. ` +
-        `With the OR operator, only the WEAKEST control needs to be satisfied. ` +
-        `This contradicts the Swiss cheese model of layered security.`,
+        `This policy requires ${labels.join(" OR ")}. ` +
+        `Although it uses the OR operator, all controls are ${soleGroup} controls of equivalent strength, ` +
+        `so there is no "weakest control" for an attacker to downgrade to.\n\n` +
+        (soleGroup === "device-trust"
+          ? `Requiring a **compliant device OR a Microsoft Entra hybrid joined device** is a Microsoft-recommended ` +
+            `way to require a managed, trusted device while supporting both Intune-managed and hybrid-joined ` +
+            `estates. Both controls enforce device trust — neither is weaker than the other.`
+          : `Requiring an **approved client app OR an app protection policy** is Microsoft's recommended mobile ` +
+            `application management (MAM) pattern. Both controls enforce app-level protection of equivalent strength.`),
       recommendation:
-        'Change the operator to "AND" so ALL controls must be satisfied, or ' +
-        "split into separate policies each requiring a single control. " +
-        "Per Fabian Bader: use AND, not OR, for grant controls.",
+        "No change required — this OR is between controls of equivalent strength and does not weaken the policy. " +
+        "If you intend these device/app controls to be layered on top of MFA, add MFA as a separate policy or as an " +
+        "AND condition; do not rely on this policy alone for the MFA layer.",
     });
+    return findings;
   }
+
+  // Mixed strength tiers — a weaker control can satisfy the policy in place of a
+  // stronger one, which is the genuine "weakest control is effective" weakness.
+  findings.push({
+    id: nextFindingId(),
+    policyId: policy.id,
+    policyName: policy.displayName,
+    severity: "high",
+    category: "Swiss Cheese Model",
+    title: 'Grant controls use "OR" — weakest control is effective',
+    description:
+      `This policy requires ${labels.join(" OR ")}. ` +
+      `With the OR operator across controls of differing strength, only the WEAKEST control needs to be ` +
+      `satisfied — an attacker satisfies the easiest one and skips the rest. ` +
+      `This contradicts the Swiss cheese model of layered security.`,
+    recommendation:
+      'Change the operator to "AND" so ALL controls must be satisfied, or ' +
+      "split into separate policies each requiring a single control. " +
+      "Per Fabian Bader: use AND, not OR, for grant controls of differing strength.",
+  });
 
   return findings;
 }
 
 // ─── Check: Device Registration Bypass ───────────────────────────────────────
 
+/** User action targeting device registration/join (only MFA/TOU controls apply). */
+const REGISTER_DEVICE_ACTION = "urn:user:registerdevice";
+
+/** Whether a policy requires MFA or an authentication strength. */
+function policyRequiresMfa(policy: ConditionalAccessPolicy): boolean {
+  const g = policy.grantControls;
+  return !!g && (g.builtInControls.includes("mfa") || g.authenticationStrength != null);
+}
+
 function checkDeviceRegistrationBypass(
-  policy: ConditionalAccessPolicy
+  policy: ConditionalAccessPolicy,
+  context: TenantContext
 ): Finding[] {
   const findings: Finding[] = [];
+  if (policy.state === "disabled") return findings;
+
   const apps = policy.conditions.applications;
   const grant = policy.grantControls;
   const locations = policy.conditions.locations;
 
-  const targetsDRS =
+  // The Device Registration Service is only reachable by a policy that targets
+  // it explicitly (via the register-device user action or the DRS resource) or
+  // that targets "All" apps. A policy scoped to other specific apps or user
+  // actions cannot affect device registration at all — so it can't be a
+  // registration bypass. (Note: "AllAgentIdResources" etc. are NOT "All".)
+  const explicitlyTargetsRegistration =
     apps.includeApplications.includes(DEVICE_REGISTRATION_RESOURCE.resourceId) ||
-    apps.includeApplications.includes("All");
+    apps.includeUserActions.includes(REGISTER_DEVICE_ACTION);
+  const targetsAllApps = apps.includeApplications.includes("All");
+  if (!explicitlyTargetsRegistration && !targetsAllApps) return findings;
 
-  const usesLocationCondition = locations &&
+  const usesLocationCondition =
+    !!locations &&
     (locations.includeLocations.length > 0 || locations.excludeLocations.length > 0);
-
   const requiresCompliantDevice =
     grant?.builtInControls.includes("compliantDevice") ||
     grant?.builtInControls.includes("domainJoinedDevice");
 
-  if (targetsDRS && (usesLocationCondition || requiresCompliantDevice)) {
-    const issues: string[] = [];
-    if (usesLocationCondition) issues.push("location-based conditions");
-    if (requiresCompliantDevice) issues.push("compliant/hybrid-joined device requirement");
+  // Only location/device-compliance controls are ignored by the DRS. If the
+  // policy uses neither, there is nothing the DRS would silently skip.
+  if (!usesLocationCondition && !requiresCompliantDevice) return findings;
 
-    findings.push({
-      id: nextFindingId(),
-      policyId: policy.id,
-      policyName: policy.displayName,
-      severity: "high",
-      category: "Device Registration Bypass",
-      title: `Device Registration Service bypasses ${issues.join(" and ")}`,
-      description:
-        `This policy uses ${issues.join(" and ")}, but the Device Registration Service ` +
-        `(${DEVICE_REGISTRATION_RESOURCE.resourceId}) can ONLY be protected by MFA grant controls. ` +
-        `Location conditions and device compliance requirements are ignored for device registration. ` +
-        `(MSRC VULN-153600 — confirmed by-design by Microsoft)`,
-      recommendation:
-        "Ensure you have a separate policy requiring MFA for the Device Registration Service. " +
-        "Do not rely solely on location or device compliance to protect device enrollment.",
-      relatedIds: [DEVICE_REGISTRATION_RESOURCE.resourceId],
-    });
-  }
+  // The DRS *does* honor MFA / authentication strength. If this policy already
+  // requires MFA, device registration is protected by it — no bypass.
+  if (policyRequiresMfa(policy)) return findings;
+
+  // The documented mitigation is a dedicated policy requiring MFA/auth-strength
+  // for the register-device user action (or the DRS resource). If such an
+  // enabled policy exists, device registration is already protected — the
+  // location/compliance limitation of THIS policy is moot.
+  const hasRegistrationMfaPolicy = context.policies.some((p) => {
+    if (p.id === policy.id || p.state === "disabled") return false;
+    const pa = p.conditions.applications;
+    const coversRegistration =
+      pa.includeUserActions.includes(REGISTER_DEVICE_ACTION) ||
+      pa.includeApplications.includes(DEVICE_REGISTRATION_RESOURCE.resourceId);
+    return coversRegistration && policyRequiresMfa(p);
+  });
+  if (hasRegistrationMfaPolicy) return findings;
+
+  // Genuine gap: the policy leans on controls the DRS ignores, requires no MFA
+  // itself, and no dedicated registration-MFA policy exists.
+  const blocks = grant?.builtInControls.includes("block");
+  const issues: string[] = [];
+  if (usesLocationCondition) issues.push("location-based conditions");
+  if (requiresCompliantDevice) issues.push("a compliant/hybrid-joined device requirement");
+
+  // Explicitly targeting registration with non-MFA controls is a clear
+  // misconfiguration (High). Merely covering it incidentally via "All apps" is
+  // a lower-confidence gap (Medium).
+  const severity: Severity = explicitlyTargetsRegistration ? "high" : "medium";
+
+  const framing = blocks
+    ? `This policy blocks access using ${issues.join(" and ")}, but those conditions are NOT evaluated for the ` +
+      `Device Registration Service (${DEVICE_REGISTRATION_RESOURCE.resourceId}). Device registration is therefore ` +
+      `not covered by this block and can still occur (for example from an untrusted location).`
+    : `This policy relies on ${issues.join(" and ")} to grant access, but those controls are NOT evaluated for the ` +
+      `Device Registration Service (${DEVICE_REGISTRATION_RESOURCE.resourceId}) — only MFA / authentication strength is.`;
+
+  findings.push({
+    id: nextFindingId(),
+    policyId: policy.id,
+    policyName: policy.displayName,
+    severity,
+    category: "Device Registration Bypass",
+    title: explicitlyTargetsRegistration
+      ? "Device registration protected only by controls the service ignores"
+      : "Device Registration Service not covered by this policy's controls",
+    description:
+      `${framing} The DRS only honors MFA grant controls (MSRC VULN-153600 — confirmed by-design by Microsoft). ` +
+      `No separate enabled policy was found that requires MFA or authentication strength for the register-device ` +
+      `user action, so device registration currently has no working control from this policy.`,
+    recommendation:
+      'Create (or enable) a dedicated policy that requires MFA or authentication strength for the ' +
+      '"Register or join devices" user action. Do not rely on location or device compliance to protect device enrollment.',
+    relatedIds: [DEVICE_REGISTRATION_RESOURCE.resourceId],
+  });
 
   return findings;
 }
 
 // ─── Check: Service Principal Exclusions ─────────────────────────────────────
+
+/**
+ * Built-in Conditional Access application *groups*. These appear in include/
+ * exclude lists as string identifiers (not GUIDs) and are not service
+ * principals, so they are absent from the SP list and app catalog. Recognize
+ * them so they aren't mislabeled as "unrecognized app IDs".
+ */
+const CA_APP_GROUP_ALIASES: Record<string, { displayName: string; purpose: string }> = {
+  office365: {
+    displayName: "Office 365 (app group)",
+    purpose:
+      "Built-in Conditional Access application group covering the core Office 365 services " +
+      "(Exchange Online, SharePoint Online, Teams, and related apps).",
+  },
+  microsoftadminportals: {
+    displayName: "Microsoft Admin Portals (app group)",
+    purpose:
+      "Built-in Conditional Access application group covering the Microsoft admin portals " +
+      "(Microsoft Entra admin center, Microsoft 365 admin center, Azure portal, and others).",
+  },
+};
 
 function checkServicePrincipalExclusions(
   policy: ConditionalAccessPolicy,
@@ -426,9 +510,10 @@ function checkServicePrincipalExclusions(
       (a) => a.appId.toLowerCase() === appId.toLowerCase()
     );
     const appDesc = APP_DESCRIPTION_MAP.get(appId.toLowerCase());
+    const appGroup = CA_APP_GROUP_ALIASES[appId.toLowerCase()];
 
-    const name = appDesc?.displayName ?? sp?.displayName ?? bypassApp?.displayName ?? appId;
-    const purpose = appDesc?.purpose ?? bypassApp?.description ?? (sp ? `Service principal: ${sp.servicePrincipalType ?? "Application"}` : "Unrecognized app ID — not found in service principal list or known app catalog.");
+    const name = appDesc?.displayName ?? sp?.displayName ?? bypassApp?.displayName ?? appGroup?.displayName ?? appId;
+    const purpose = appDesc?.purpose ?? bypassApp?.description ?? appGroup?.purpose ?? (sp ? `Service principal: ${sp.servicePrincipalType ?? "Application"}` : "Unrecognized app ID — not found in service principal list or known app catalog.");
     const reason = appDesc?.commonExclusionReason ?? "No documented exclusion reason. Review whether this exclusion is necessary.";
     const risk = appDesc?.exclusionRisk ?? (bypassApp ? "high" : "medium");
 
@@ -475,27 +560,42 @@ function checkMissingMFA(policy: ConditionalAccessPolicy): Finding[] {
   const findings: Finding[] = [];
   const grant = policy.grantControls;
   if (policy.state === "disabled") return findings;
+  if (!grant || grant.builtInControls.length === 0) return findings;
+  if (grant.builtInControls.includes("block")) return findings;
 
   const requiresMfa =
-    grant?.builtInControls.includes("mfa") ||
-    grant?.authenticationStrength != null;
+    grant.builtInControls.includes("mfa") || grant.authenticationStrength != null;
+  if (requiresMfa) return findings;
 
-  if (!requiresMfa && grant && grant.builtInControls.length > 0 && !grant.builtInControls.includes("block")) {
-    findings.push({
-      id: nextFindingId(),
-      policyId: policy.id,
-      policyName: policy.displayName,
-      severity: "medium",
-      category: "Swiss Cheese Model",
-      title: "Policy does not require MFA",
-      description:
-        `This policy grants access with: ${grant.builtInControls.join(", ")} but does not require MFA. ` +
-        `Per the Swiss cheese model, MFA should be the bare minimum requirement layered under everything else.`,
-      recommendation:
-        "Add MFA as a grant control requirement. MFA should be the baseline layer of defense. " +
-        "Consider using Authentication Strengths for phishing-resistant MFA.",
-    });
-  }
+  // Agent / workload-identity policies (e.g. `includeUsers: ["None"]` targeting
+  // agent identities) cannot perform interactive MFA — requiring it of them is
+  // not meaningful.
+  if (!policyTargetsUsers(policy)) return findings;
+
+  // A policy whose grant controls are ALL strong device-trust / app-protection
+  // controls is not "missing MFA" in a weak sense — requiring a compliant/hybrid
+  // device or app protection is a legitimate standalone control, typically
+  // layered on top of a separate MFA baseline. (The "no MFA anywhere in the
+  // tenant" case is covered by the tenant-wide MFA-coverage check.)
+  const allStrongNonMfaControls = grant.builtInControls.every(
+    (c) => c in EQUIVALENT_STRENGTH_GROUPS
+  );
+  if (allStrongNonMfaControls) return findings;
+
+  findings.push({
+    id: nextFindingId(),
+    policyId: policy.id,
+    policyName: policy.displayName,
+    severity: "medium",
+    category: "Swiss Cheese Model",
+    title: "Policy does not require MFA",
+    description:
+      `This policy grants access with: ${grant.builtInControls.join(", ")} but does not require MFA. ` +
+      `Per the Swiss cheese model, MFA should be the bare minimum requirement layered under everything else.`,
+    recommendation:
+      "Add MFA as a grant control requirement. MFA should be the baseline layer of defense. " +
+      "Consider using Authentication Strengths for phishing-resistant MFA.",
+  });
 
   return findings;
 }
@@ -503,7 +603,8 @@ function checkMissingMFA(policy: ConditionalAccessPolicy): Finding[] {
 // ─── Check: All Users + All Apps Coverage ────────────────────────────────────
 
 function checkAllUsersAllApps(
-  policy: ConditionalAccessPolicy
+  policy: ConditionalAccessPolicy,
+  breakGlass: BreakGlassCandidate | null
 ): Finding[] {
   const findings: Finding[] = [];
   const { users, applications } = policy.conditions;
@@ -511,32 +612,53 @@ function checkAllUsersAllApps(
   const targetsAllUsers = users.includeUsers.includes("All");
   const targetsAllApps = applications.includeApplications.includes("All");
 
-  if (targetsAllUsers && targetsAllApps && policy.state === "enabled") {
-    const hasUserExclusions =
-      users.excludeUsers.length > 0 ||
-      users.excludeGroups.length > 0 ||
-      users.excludeRoles.length > 0;
-    const hasAppExclusions = applications.excludeApplications.length > 0;
-
-    if (hasUserExclusions || hasAppExclusions) {
-      findings.push({
-        id: nextFindingId(),
-        policyId: policy.id,
-        policyName: policy.displayName,
-        severity: "medium",
-        category: "Policy Scope",
-        title: "Broad policy with exclusions — review for gaps",
-        description:
-          `This policy targets All Users and All Cloud Apps but has exclusions. ` +
-          `User exclusions: ${users.excludeUsers.length + users.excludeGroups.length + users.excludeRoles.length}, ` +
-          `App exclusions: ${applications.excludeApplications.length}. ` +
-          `Exclusions create potential bypass paths.`,
-        recommendation:
-          "Regularly audit exclusions. Use break-glass accounts sparingly. " +
-          "Ensure every excluded entity is documented with a business justification.",
-      });
-    }
+  if (!(targetsAllUsers && targetsAllApps && policy.state === "enabled")) {
+    return findings;
   }
+
+  // Break-glass exclusions are expected best practice (Microsoft recommends
+  // excluding emergency-access accounts from every CA policy) and are already
+  // surfaced by the dedicated Break-Glass check — which flags a positive
+  // "Break-glass excluded ✓". Counting them here as a "gap" both contradicts
+  // that finding and buries real exclusions in noise. Exclude the identified
+  // break-glass account/group from the tally.
+  const bgId = breakGlass?.id?.toLowerCase();
+  const isBreakGlass = (id: string) => bgId != null && id.toLowerCase() === bgId;
+
+  const nonBgUserExclusions =
+    users.excludeUsers.filter((id) => !isBreakGlass(id)).length +
+    users.excludeGroups.filter((id) => !isBreakGlass(id)).length +
+    users.excludeRoles.filter((id) => !isBreakGlass(id)).length;
+  const appExclusions = applications.excludeApplications.length;
+
+  // Only break-glass (or nothing) excluded — expected hygiene, not a gap.
+  if (nonBgUserExclusions === 0 && appExclusions === 0) return findings;
+
+  // App exclusions are a genuine bypass surface and keep Medium; user/group/role
+  // exclusions beyond break-glass are an audit reminder and drop to Low.
+  const severity: Severity = appExclusions > 0 ? "medium" : "low";
+  const bgExcluded =
+    users.excludeUsers.some(isBreakGlass) || users.excludeGroups.some(isBreakGlass);
+  const bgNote = bgExcluded
+    ? " (the break-glass exclusion is expected and is not counted here)"
+    : "";
+
+  findings.push({
+    id: nextFindingId(),
+    policyId: policy.id,
+    policyName: policy.displayName,
+    severity,
+    category: "Policy Scope",
+    title: "Broad policy with exclusions — review for gaps",
+    description:
+      `This policy targets All Users and All Cloud Apps but has exclusions beyond break-glass. ` +
+      `Non-break-glass user/group/role exclusions: ${nonBgUserExclusions}, ` +
+      `App exclusions: ${appExclusions}.${bgNote} ` +
+      `Exclusions create potential bypass paths.`,
+    recommendation:
+      "Regularly audit exclusions. Ensure every excluded entity — other than documented " +
+      "break-glass accounts — has a business justification and is covered by a compensating policy.",
+  });
 
   return findings;
 }
@@ -756,8 +878,30 @@ function checkCABypassApps(
 // Tools like MFASweep enumerate user-agent strings to find gaps where
 // platform-specific CA policies can be bypassed by spoofing the UA.
 
+/**
+ * Whether a policy blocks access from unknown/unsupported device platforms —
+ * the recommended companion control that closes the user-agent-spoofing path.
+ * The canonical pattern includes "all" platforms, excludes the recognized ones,
+ * and blocks, so anything unrecognized is denied. Requires broad scope (All
+ * Users + All Apps) to count as a tenant-wide compensating control.
+ */
+function isBlockUnknownPlatformsPolicy(p: ConditionalAccessPolicy): boolean {
+  if (p.state !== "enabled") return false;
+  const pl = p.conditions.platforms;
+  const blocks = p.grantControls?.builtInControls.includes("block");
+  return (
+    !!blocks &&
+    !!pl &&
+    pl.includePlatforms.includes("all") &&
+    pl.excludePlatforms.length > 0 &&
+    p.conditions.users.includeUsers.includes("All") &&
+    p.conditions.applications.includeApplications.includes("All")
+  );
+}
+
 function checkUserAgentBypass(
-  policy: ConditionalAccessPolicy
+  policy: ConditionalAccessPolicy,
+  context: TenantContext
 ): Finding[] {
   const findings: Finding[] = [];
   if (policy.state === "disabled") return findings;
@@ -780,23 +924,50 @@ function checkUserAgentBypass(
         grant?.builtInControls.includes("domainJoinedDevice");
 
       if (requiresMfa || requiresCompliance) {
-        findings.push({
-          id: nextFindingId(),
-          policyId: policy.id,
-          policyName: policy.displayName,
-          severity: "high",
-          category: "User-Agent Bypass",
-          title: `Platform condition only targets ${targeted.join(", ")} — user-agent spoofing risk`,
-          description:
-            `This policy enforces controls only for platforms: ${targeted.join(", ")}. ` +
-            `An attacker can spoof their user-agent string to appear as an unrecognized platform ` +
-            `(e.g. Linux, ChromeOS, or a custom UA) to bypass this policy entirely. ` +
-            `Tools like MFASweep actively exploit this gap by enumerating user-agent strings.`,
-          recommendation:
-            "Change the platform condition to target \"All platforms\" instead of specific platforms, or " +
-            "create a companion policy that blocks access from unknown/unsupported device platforms " +
-            "(supplementary CA hardening). This eliminates the user-agent spoofing bypass path.",
-        });
+        // If a broad block-unknown-platforms policy exists, the spoofing path to
+        // an *unrecognized* platform is already closed — downgrade to info and
+        // name the companion policy instead of flagging High.
+        const companion = context.policies.find(
+          (p) => p.id !== policy.id && isBlockUnknownPlatformsPolicy(p)
+        );
+
+        if (companion) {
+          findings.push({
+            id: nextFindingId(),
+            policyId: policy.id,
+            policyName: policy.displayName,
+            severity: "info",
+            category: "User-Agent Bypass",
+            title: `Platform condition targets ${targeted.join(", ")} — unknown-platform bypass covered by companion policy`,
+            description:
+              `This policy enforces controls only for platforms: ${targeted.join(", ")}. ` +
+              `On its own that would allow a user-agent-spoofing bypass to an unrecognized platform, but ` +
+              `**${companion.displayName}** blocks access from unknown/unsupported platforms tenant-wide, ` +
+              `which closes that path.`,
+            recommendation:
+              `No action required for the unknown-platform bypass — it is covered by **${companion.displayName}**. ` +
+              `Do verify that any recognized platforms you intentionally do not target here (e.g. iOS/Android) are ` +
+              `covered by another policy such as app protection / MAM.`,
+          });
+        } else {
+          findings.push({
+            id: nextFindingId(),
+            policyId: policy.id,
+            policyName: policy.displayName,
+            severity: "high",
+            category: "User-Agent Bypass",
+            title: `Platform condition only targets ${targeted.join(", ")} — user-agent spoofing risk`,
+            description:
+              `This policy enforces controls only for platforms: ${targeted.join(", ")}. ` +
+              `An attacker can spoof their user-agent string to appear as an unrecognized platform ` +
+              `(e.g. Linux, ChromeOS, or a custom UA) to bypass this policy entirely. ` +
+              `Tools like MFASweep actively exploit this gap by enumerating user-agent strings.`,
+            recommendation:
+              "Change the platform condition to target \"All platforms\" instead of specific platforms, or " +
+              "create a companion policy that blocks access from unknown/unsupported device platforms " +
+              "(supplementary CA hardening). This eliminates the user-agent spoofing bypass path.",
+          });
+        }
       }
     }
   }
@@ -1472,10 +1643,12 @@ function checkGuestAuthenticationStrength(
     return findings;
   }
 
-  // Determine severity and messaging based on authentication strength type
-  let severity: Severity = "high";
+  // Requiring MFA / authentication strength for guests is best practice, not a
+  // weakness — this finding is an *operational advisory* that Cross-Tenant
+  // Access Settings (inbound MFA trust) must be configured so guests aren't
+  // unexpectedly blocked. Report it as informational, not High/Medium.
+  const severity: Severity = "info";
   let strengthType = "MFA";
-  let requiresCrossTenantTrust = true;
 
   if (requiresAuthStrength) {
     const authStrengthName = grant.authenticationStrength?.displayName || "Unknown";
@@ -1484,13 +1657,9 @@ function checkGuestAuthenticationStrength(
     // tenant authentication-strength catalog, so custom strengths whose
     // displayName doesn't say "phishing-resistant" but whose underlying
     // methods are (FIDO2 / WHfB / x509) are still classified correctly.
-    if (policyUsesPhishingResistant(policy, context)) {
-      severity = "high";
-      strengthType = "Phishing-resistant MFA";
-    } else {
-      severity = "medium";
-      strengthType = `Authentication strength: ${authStrengthName}`;
-    }
+    strengthType = policyUsesPhishingResistant(policy, context)
+      ? "Phishing-resistant MFA"
+      : `Authentication strength: ${authStrengthName}`;
   }
 
   // Determine guest user types being targeted
@@ -1848,6 +2017,29 @@ function identifyBreakGlass(context: TenantContext): BreakGlassCandidate | null 
   return primary;
 }
 
+/**
+ * Whether a policy targets real (human) user principals.
+ *
+ * Agent-identity and other workload-only policies use the sentinel
+ * `includeUsers: ["None"]`, which has array length 1 but targets no users — a
+ * naive `includeUsers.length > 0` check misreads it as user-targeting.
+ * Break-glass is a human emergency-access group, so it is irrelevant to these
+ * policies and they must be excluded from break-glass evaluation.
+ *
+ * Guest/external-only policies (`includeGuestsOrExternalUsers`) are treated as
+ * NOT user-targeting here, preserving prior behavior — an internal break-glass
+ * group does not belong on a guest-scoped policy.
+ */
+function policyTargetsUsers(policy: ConditionalAccessPolicy): boolean {
+  const u = policy.conditions.users;
+  const realIncludeUsers = u.includeUsers.filter((x) => x !== "None");
+  return (
+    realIncludeUsers.length > 0 ||
+    u.includeGroups.length > 0 ||
+    u.includeRoles.length > 0
+  );
+}
+
 // ─── Per-Policy Break-Glass Exclusion Check ──────────────────────────────────
 
 function checkBreakGlassPerPolicy(
@@ -1868,12 +2060,10 @@ function checkBreakGlassPerPolicy(
       ? policy.conditions.users.excludeUsers.includes(breakGlass.id)
       : policy.conditions.users.excludeGroups.includes(breakGlass.id);
 
-  // Determine if this policy actually targets users (skip workload-identity-only policies)
-  const targetsUsers =
-    policy.conditions.users.includeUsers.length > 0 ||
-    policy.conditions.users.includeGroups.length > 0 ||
-    policy.conditions.users.includeRoles.length > 0;
-  if (!targetsUsers) return [];
+  // Skip workload-identity-only policies (e.g. agent-identity policies using the
+  // `includeUsers: ["None"]` sentinel) — break-glass is a human group and does
+  // not apply to them.
+  if (!policyTargetsUsers(policy)) return [];
 
   if (excluded) {
     return [
@@ -2104,10 +2294,7 @@ function checkTenantWideGaps(context: TenantContext): Finding[] {
   // Count break-glass coverage across ALL policies (not just critical ones)
   const allPolicies = context.policies;
   const totalPolicyCount = allPolicies.length;
-  const userTargetingPolicies = allPolicies.filter(p => {
-    const u = p.conditions.users;
-    return u.includeUsers.length > 0 || u.includeGroups.length > 0 || u.includeRoles.length > 0;
-  });
+  const userTargetingPolicies = allPolicies.filter(policyTargetsUsers);
 
   let policiesWithBreakGlass = 0;
   let policiesWithoutBreakGlass = 0;
