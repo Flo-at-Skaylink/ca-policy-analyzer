@@ -107,6 +107,22 @@ This fixture intentionally includes edge cases that previously caused offline/li
 
 > Full version history lives in [CHANGELOG.md](CHANGELOG.md).
 
+### v1.16.1 — Offline Mode (July 10, 2026) — *[@chrisfriday](https://github.com/chrisfriday)*
+
+- **Import CA policies from a PowerShell JSON export** — full analysis without direct tenant connectivity. New offline import parser handles real-world `ConvertTo-Json` quirks (PascalCase, `AdditionalProperties`, UTF-16). Redesigned opening screen with two explicit paths: *Offline import* and *Direct tenant connection*. New `/offline-export` in-app guide with step-by-step PowerShell instructions. 20 MB size limit + 40-level recursion guard.
+
+### v1.16.0 — False Positive Reduction (July 10, 2026) — *[@dermo-blast](https://github.com/dermo-blast)*
+
+- **7 surgical false-positive fixes** across findings detection and persona coverage:
+  - `compliantDevice OR domainJoinedDevice` / `approvedApplication OR compliantApplication` downgrade High → Info (Microsoft-recommended equivalent-strength pattern)
+  - Agent/workload-identity policies (`includeUsers: ["None"]`) no longer flagged for missing break-glass exclusions
+  - Break-glass-aware broad-policy check — break-glass exclusions no longer counted as gaps
+  - Device Registration Bypass check is now context-aware — suppressed when a compensating MFA-for-registration policy exists
+  - Missing MFA check skips agent-identity policies and device-trust-only policies
+  - User-agent bypass downgrades to Info when a block-unknown-platforms companion policy exists
+  - Guest MFA finding: High → Info (best practice advisory, not a gap); built-in CA app groups recognised
+  - All-Users policies now credit Admins + Developers in persona coverage
+
 ### v1.15.21 — Joey Verlinden Baseline Updated to 2026.6.1 (June 11, 2026)
 
 - **Joey Verlinden preset updated to release [2026.6.1](https://github.com/j0eyv/ConditionalAccessBaseline/releases/tag/2026.6.1)** — preset now points at the `2026.6.1` tag instead of `main`. New release ships 38 ConditionalAccess policies (consolidated from 67), 36 exclusion groups, 3 named locations, and a MigrationTable. The CA005/CA006 app protection variants were merged, and new **CA501–CA505 Agents** policies cover Microsoft Entra Agent Identities (Workload Identities).

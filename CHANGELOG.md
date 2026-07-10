@@ -5,6 +5,31 @@ All notable changes to the CA Policy Analyzer will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.1] - 2026-07-10
+
+### Added
+
+- **Offline mode — import CA policies from a PowerShell JSON export** ([@chrisfriday](https://github.com/chrisfriday), [PR #12](https://github.com/Jhope188/ca-policy-analyzer/pull/12)) — full analysis without direct tenant connectivity:
+  - New **offline import parser** (`src/lib/offline-import.ts`) with broad Graph PowerShell v2/Beta compatibility — handles PascalCase keys, `AdditionalProperties`, single-object collections, null array fields, and null guest/auth-strength placeholders produced by real-world `ConvertTo-Json` exports.
+  - New **`/offline-export` in-app guide page** — step-by-step PowerShell export instructions using the Graph PowerShell v2 Beta module.
+  - **Redesigned opening screen** — two explicit paths: *Offline import* and *Direct tenant connection*. Header shows an "Offline mode" indicator when an import is active; clears on return to home.
+  - **Security hardening**: 20 MB file-size limit enforced before parsing; 40-level recursion depth guard in key normalisation.
+  - PowerShell export command: `Get-MgBetaIdentityConditionalAccessPolicy | ConvertTo-Json -Depth 10 | Out-File ca-export.json`
+
+## [1.16.0] - 2026-07-10
+
+### Changed
+
+- **False-positive reduction — findings are now configuration- and context-aware** ([@dermo-blast](https://github.com/dermo-blast), [PR #18](https://github.com/Jhope188/ca-policy-analyzer/pull/18)) — 7 surgical fixes across `analyzer.ts` and `persona-coverage.ts`:
+  1. **`checkGrantControlOperator`** — `compliantDevice OR domainJoinedDevice` and `approvedApplication OR compliantApplication` downgrade from High → Info. Both are Microsoft-recommended equivalent-strength patterns (hybrid device trust / MAM). Genuinely mixed-strength ORs (e.g. `mfa OR compliantDevice`) still flag High.
+  2. **Break-glass checks skip workload/agent-identity policies** — `includeUsers: ["None"]` sentinel is now correctly identified as non-user-targeting via a shared `policyTargetsUsers()` helper, preventing workload policies from being flagged for missing break-glass exclusions and inflating tenant-wide coverage counts.
+  3. **`checkAllUsersAllApps` is break-glass-aware** — break-glass is subtracted from the exclusion tally (it's expected hygiene, already praised by the dedicated break-glass check). App exclusions remain Medium; other non-break-glass group exclusions drop to Low; break-glass-only → suppressed.
+  4. **`checkDeviceRegistrationBypass` is intent- and context-aware** — no longer fires on policies that already require MFA (DRS honors MFA); suppressed when a dedicated register-device MFA policy already exists (the documented mitigation); severity scales with whether registration is explicitly targeted vs. incidentally covered via "All apps".
+  5. **`checkMissingMFA` is device/agent-aware** — skips agent-identity policies (can't do interactive MFA) and policies whose sole controls are strong device-trust/app-protection (valid standalone controls layered on a separate MFA baseline).
+  6. **`checkUserAgentBypass` downgrades to Info** when a broad block-unknown-platforms companion policy already exists (the very thing its own remediation recommends). Still flags High when no companion exists.
+  7. **Guest MFA finding: High → Info** — requiring MFA for guests is best practice; finding is now an operational advisory (configure cross-tenant trust) rather than a security gap. Low-privilege-scope de-dup: `all-resources-exclusion-change` no longer promoted to the main findings list (retained in exclusion-findings view). Built-in CA app groups (`Office365`, `MicrosoftAdminPortals`) now recognised instead of labelled "unrecognized app ID".
+  8. **`persona-coverage` credits All-Users policies to Admins + Developers** — a tenant-wide policy now correctly reduces per-persona coverage gaps for admin and developer personas. Guest-targeting policies also credit Guest Admins.
+
 ## [1.15.21] - 2026-06-11
 
 ### Changed
