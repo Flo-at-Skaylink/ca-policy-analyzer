@@ -207,6 +207,8 @@ export function analyzeBaselineGaps(
 
   const buckets: PersonaGapBucket[] = [];
   for (const persona of PERSONA_ORDER) {
+    // We append unknown explicitly at the end so ordering is stable.
+    if (persona === "unknown") continue;
     const list = byPersona.get(persona) ?? [];
     if (list.length === 0) continue;
     const meta = PERSONA_META[persona];
