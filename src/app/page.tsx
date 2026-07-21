@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { useIsAuthenticated, useMsal } from "@azure/msal-react";
 import { loadTenantContext, TenantContext } from "@/lib/graph-client";
 import { analyzeAllPolicies, AnalysisResult, calculateCompositeScore, CompositeScoreResult } from "@/lib/analyzer";
@@ -22,10 +22,13 @@ import { analyzeBaselineGaps, BaselineGapResult } from "@/lib/baseline-gap";
 import { TemplateCategory } from "@/data/policy-templates";
 import { BaselineGapView } from "@/components/baseline-gap-view";
 import { exportToExcel, exportToPowerPoint, loadDefaultLogo } from "@/lib/export-utils";
+import { buildTenantContextFromOfflineExport, OfflineExportPayload } from "@/lib/offline-import";
+import { loginRequest } from "@/lib/msal-config";
 import { Shield, Loader2, Play, Download, RefreshCw, LayoutDashboard, FileText, AlertTriangle, Layers, CheckSquare, BookOpen, FileSpreadsheet, Presentation, MapPin, Users, GitCompareArrows } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type ViewTab = "dashboard" | "policies" | "findings" | "templates" | "baseline" | "cis" | "locations" | "personas" | "ms-learn";
+const MAX_OFFLINE_IMPORT_BYTES = 20 * 1024 * 1024; // 20MB
 
 export default function Home() {
   const isAuthenticated = useIsAuthenticated();
@@ -47,6 +50,95 @@ export default function Home() {
   const [hideMicrosoft, setHideMicrosoft] = useState(false);
   const [baselineCategory, setBaselineCategory] = useState<TemplateCategory | null>(null);
   const [logoBase64, setLogoBase64] = useState<string | null>(null);
+
+  const setAppMode = useCallback((mode: "offline" | "live" | null) => {
+    if (mode === null) {
+      localStorage.removeItem("caAnalyzerMode");
+    } else {
+      localStorage.setItem("caAnalyzerMode", mode);
+    }
+    window.dispatchEvent(new CustomEvent("ca-analyzer-mode", { detail: mode }));
+  }, []);
+
+  useEffect(() => {
+    if (!result) setAppMode(null);
+  }, [result, setAppMode]);
+
+  const executeAnalysis = useCallback(async (ctx: TenantContext) => {
+    setContext(ctx);
+
+    setProgress("Analyzing policies…");
+    const analysisResult = analyzeAllPolicies(ctx);
+    setResult(analysisResult);
+
+    setProgress("Matching against policy templates…");
+    let activeTemplates = analyzeTemplates(ctx);
+    setTemplateResult(activeTemplates);
+
+    // Restore custom repo from previous session if saved
+    const savedRepoUrl = localStorage.getItem("customRepoUrl");
+    if (savedRepoUrl) {
+      setProgress("Restoring custom repo templates…");
+      // Saved value is either a plain URL string (legacy) or a JSON
+      // `{ url, fallbackUrl }` payload for layered baselines.
+      let parsedUrl = savedRepoUrl;
+      let parsedFallback: string | undefined;
+      if (savedRepoUrl.startsWith("{")) {
+        try {
+          const j = JSON.parse(savedRepoUrl) as { url?: string; fallbackUrl?: string };
+          if (j.url) parsedUrl = j.url;
+          parsedFallback = j.fallbackUrl;
+        } catch {
+          // Fall through and treat as a plain URL.
+        }
+      }
+      const custom = parsedFallback
+        ? await fetchLayeredGitHubTemplates(parsedUrl, parsedFallback)
+        : await fetchGitHubTemplates(parsedUrl);
+      if (custom.templates.length > 0) {
+        activeTemplates = analyzeTemplates(ctx, custom.templates);
+        setTemplateResult(activeTemplates);
+        setCustomRepoDisplay(custom.repoDisplay);
+      } else {
+        localStorage.removeItem("customRepoUrl");
+      }
+    }
+
+    setProgress("Running CIS alignment checks…");
+    const cis = runCISAlignment(ctx);
+    setCisResult(cis);
+
+    setProgress("Analyzing named locations…");
+    const locResult = analyzeNamedLocations(ctx);
+    setLocationResult(locResult);
+
+    setProgress("Scoring persona × control coverage…");
+    const persona = analyzePersonaCoverage(ctx);
+    setPersonaResult(persona);
+    // Merge persona-coverage findings into the main findings list so they
+    // surface in the Findings tab and exports without double-counting.
+    if (persona.findings.length > 0) {
+      const merged: AnalysisResult = {
+        ...analysisResult,
+        findings: [...analysisResult.findings, ...persona.findings],
+      };
+      setResult(merged);
+    }
+
+    setProgress("Computing security posture score…");
+    const composite = calculateCompositeScore(analysisResult, cis, activeTemplates);
+    setCompositeScore(composite);
+
+    setProgress("Scoring against Zero Trust pillars…");
+    const mergedForScorecard: AnalysisResult =
+      persona.findings.length > 0
+        ? { ...analysisResult, findings: [...analysisResult.findings, ...persona.findings] }
+        : analysisResult;
+    const zt = buildZeroTrustScorecard(ctx, mergedForScorecard, persona);
+    setScorecard(zt);
+
+    setActiveTab("dashboard");
+  }, []);
 
   /** Lazy-derived baseline gap report. Recomputes whenever templates or context change. */
   const baselineGapResult: BaselineGapResult | null = useMemo(() => {
@@ -92,80 +184,9 @@ export default function Home() {
     setError(null);
 
     try {
+      setAppMode("live");
       const ctx = await loadTenantContext(instance, accounts[0], setProgress);
-      setContext(ctx);
-
-      setProgress("Analyzing policies…");
-      const analysisResult = analyzeAllPolicies(ctx);
-      setResult(analysisResult);
-
-      setProgress("Matching against policy templates…");
-      let activeTemplates = analyzeTemplates(ctx);
-      setTemplateResult(activeTemplates);
-
-      // Restore custom repo from previous session if saved
-      const savedRepoUrl = localStorage.getItem("customRepoUrl");
-      if (savedRepoUrl) {
-        setProgress("Restoring custom repo templates…");
-        // Saved value is either a plain URL string (legacy) or a JSON
-        // `{ url, fallbackUrl }` payload for layered baselines.
-        let parsedUrl = savedRepoUrl;
-        let parsedFallback: string | undefined;
-        if (savedRepoUrl.startsWith("{")) {
-          try {
-            const j = JSON.parse(savedRepoUrl) as { url?: string; fallbackUrl?: string };
-            if (j.url) parsedUrl = j.url;
-            parsedFallback = j.fallbackUrl;
-          } catch {
-            // Fall through and treat as a plain URL.
-          }
-        }
-        const custom = parsedFallback
-          ? await fetchLayeredGitHubTemplates(parsedUrl, parsedFallback)
-          : await fetchGitHubTemplates(parsedUrl);
-        if (custom.templates.length > 0) {
-          activeTemplates = analyzeTemplates(ctx, custom.templates);
-          setTemplateResult(activeTemplates);
-          setCustomRepoDisplay(custom.repoDisplay);
-        } else {
-          localStorage.removeItem("customRepoUrl");
-        }
-      }
-
-      setProgress("Running CIS alignment checks…");
-      const cis = runCISAlignment(ctx);
-      setCisResult(cis);
-
-      setProgress("Analyzing named locations…");
-      const locResult = analyzeNamedLocations(ctx);
-      setLocationResult(locResult);
-
-      setProgress("Scoring persona × control coverage…");
-      const persona = analyzePersonaCoverage(ctx);
-      setPersonaResult(persona);
-      // Merge persona-coverage findings into the main findings list so they
-      // surface in the Findings tab and exports without double-counting.
-      if (persona.findings.length > 0) {
-        const merged: AnalysisResult = {
-          ...analysisResult,
-          findings: [...analysisResult.findings, ...persona.findings],
-        };
-        setResult(merged);
-      }
-
-      setProgress("Computing security posture score…");
-      const composite = calculateCompositeScore(analysisResult, cis, activeTemplates);
-      setCompositeScore(composite);
-
-      setProgress("Scoring against Zero Trust pillars…");
-      const mergedForScorecard: AnalysisResult =
-        persona.findings.length > 0
-          ? { ...analysisResult, findings: [...analysisResult.findings, ...persona.findings] }
-          : analysisResult;
-      const zt = buildZeroTrustScorecard(ctx, mergedForScorecard, persona);
-      setScorecard(zt);
-
-      setActiveTab("dashboard");
+      await executeAnalysis(ctx);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Unknown error occurred";
       setError(msg);
@@ -174,7 +195,53 @@ export default function Home() {
       setLoading(false);
       setProgress("");
     }
-  }, [instance, accounts]);
+  }, [instance, accounts, executeAnalysis, setAppMode]);
+
+  const handleLogin = useCallback(() => {
+    setAppMode("live");
+    instance.loginRedirect(loginRequest).catch((e) => {
+      console.error("Login failed:", e);
+    });
+  }, [instance, setAppMode]);
+
+  const handleOfflineImport = useCallback(async (file: File) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      setProgress("Parsing offline export…");
+      if (file.size > MAX_OFFLINE_IMPORT_BYTES) {
+        throw new Error(
+          `Offline export is too large (${Math.round(file.size / (1024 * 1024))}MB). Max supported size is 20MB.`
+        );
+      }
+      const text = await file.text();
+      const parsed = JSON.parse(text) as OfflineExportPayload;
+
+      const asAny = parsed as Record<string, unknown>;
+      if (asAny.policyResults !== undefined || asAny.findings !== undefined || asAny.overallScore !== undefined) {
+        throw new Error(
+          "This looks like an analysis results export, not a raw policy export. " +
+          "To use offline mode, export your policies directly from PowerShell using " +
+          "Get-MgIdentityConditionalAccessPolicy | ConvertTo-Json -Depth 10, then upload that file."
+        );
+      }
+
+      const ctx = buildTenantContextFromOfflineExport(parsed);
+      if (ctx.policies.length === 0) {
+        throw new Error("No Conditional Access policies found. Make sure you're uploading a raw Graph PowerShell export (Get-MgIdentityConditionalAccessPolicy | ConvertTo-Json -Depth 10).");
+      }
+      setAppMode("offline");
+      await executeAnalysis(ctx);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Failed to import offline export";
+      setError(msg);
+      console.error("Offline import failed:", e);
+    } finally {
+      setLoading(false);
+      setProgress("");
+    }
+  }, [executeAnalysis, setAppMode]);
 
   const exportResults = useCallback(() => {
     if (!result) return;
@@ -190,8 +257,8 @@ export default function Home() {
     URL.revokeObjectURL(url);
   }, [result, compositeScore]);
 
-  // ── Not Authenticated ─────────────────────────────────────────────────
-  if (!isAuthenticated) {
+  // ── Not Authenticated and no offline result yet ──────────────────────
+  if (!isAuthenticated && !result) {
     return (
       <div className="flex flex-col items-center justify-center py-32 text-center">
         <Shield className="h-16 w-16 text-blue-500 mb-6" />
@@ -199,8 +266,7 @@ export default function Home() {
           CA Policy Analyzer
         </h2>
         <p className="max-w-lg text-gray-400 mb-2">
-          Connect your Entra ID tenant to analyze Conditional Access policies
-          for best practices, FOCI token-sharing risks, and known bypasses.
+          Analyze Conditional Access policies for best practices, FOCI token-sharing risks, and known bypasses.
           Built on research by{" "}
           <a
             href="https://www.entrascopes.com"
@@ -211,22 +277,74 @@ export default function Home() {
             Fabian Bader / EntraScopes
           </a>.
         </p>
-        <p className="max-w-lg text-sm text-gray-600 mb-8">
-          Requires <code className="text-gray-400">Policy.Read.All</code>,{" "}
-          <code className="text-gray-400">Application.Read.All</code>, and{" "}
-          <code className="text-gray-400">Directory.Read.All</code> delegated
-          permissions.
-        </p>
-        <p className="text-sm text-gray-600">
-          Click <strong className="text-gray-400">Connect Tenant</strong> in the
-          header to get started.
-        </p>
+        <div className="mt-8 grid w-full max-w-4xl gap-4 text-left md:grid-cols-2">
+          <div className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-5">
+            <p className="text-sm font-medium text-gray-100">Offline export import</p>
+            <p className="mt-1 text-xs text-gray-400">
+              Default mode for least privilege and fully offline analysis. Export once, then upload JSON.
+            </p>
+            <p className="mt-2 text-xs text-gray-500">
+              Limits: offline import supports JSON files up to 20MB.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <label
+                htmlFor="offline-import"
+                className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-500"
+              >
+                <Download className="h-4 w-4" />
+                Import Offline Export
+              </label>
+              <a
+                href="/offline-export"
+                className="inline-flex items-center gap-2 rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-300 hover:bg-gray-800"
+              >
+                Offline Export Instructions
+              </a>
+            </div>
+            <input
+              id="offline-import"
+              type="file"
+              accept=".json,application/json"
+              className="hidden"
+              disabled={loading}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  void handleOfflineImport(file);
+                  e.target.value = "";
+                }
+              }}
+            />
+          </div>
+
+          <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
+            <p className="text-sm font-medium text-gray-200">Direct tenant connection</p>
+            <p className="mt-1 text-xs text-gray-500">
+              Connect live to Microsoft Graph for real-time reads using delegated permissions.
+            </p>
+            <p className="mt-2 text-xs text-gray-600">
+              Requires <code className="text-gray-400">Policy.Read.All</code>,{" "}
+              <code className="text-gray-400">Application.Read.All</code>, and{" "}
+              <code className="text-gray-400">Directory.Read.All</code>.
+            </p>
+            <p className="mt-4 text-xs text-gray-500">
+              Choose this when you want real-time tenant reads via Graph.
+            </p>
+            <button
+              onClick={handleLogin}
+              className="mt-4 inline-flex items-center gap-2 rounded-lg bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700"
+            >
+              <Play className="h-4 w-4" />
+              Connect Tenant
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
 
   // ── Authenticated but not yet analyzed ────────────────────────────────
-  if (!result) {
+  if (isAuthenticated && !result) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
         <Shield className="h-12 w-12 text-blue-500 mb-4" />
@@ -288,8 +406,12 @@ export default function Home() {
   ];
 
   // ── Results View ──────────────────────────────────────────────────────
-  const tenantName = context?.tenantDisplayName ?? accounts[0]?.username?.split("@")[1] ?? "Unknown";
+  const tenantName =
+    context?.tenantDisplayName ??
+    accounts[0]?.username?.split("@")[1] ??
+    "Unknown";
   const tenantId = context?.tenantId ?? accounts[0]?.tenantId ?? "";
+  if (!result) return null;
 
   return (
     <div className="space-y-6">
@@ -309,7 +431,7 @@ export default function Home() {
       </div>
 
       {/* Tab Bar + Actions */}
-      <div className="flex items-center justify-between gap-2">
+      <div className="space-y-2">
         {/* Scrollable tab strip — icons only on mobile, icons + labels on sm+ */}
         <div className="min-w-0 flex-1 overflow-x-auto scrollbar-hide">
           <div className="inline-flex gap-1 rounded-lg bg-gray-900 p-1">
@@ -336,7 +458,7 @@ export default function Home() {
         </div>
 
         {/* Action buttons — icon-only on mobile */}
-        <div className="flex shrink-0 gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={runAnalysis}
             disabled={loading}

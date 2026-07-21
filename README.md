@@ -21,11 +21,107 @@ The app runs **100% in your browser** — your data never leaves your machine. I
 
 ![New Conditional Access Policy Analyzer](docs/screenshots/CondtionalAccessAnalyzer.png)
 
+### Offline Mode (No Direct Tenant Access)
+
+You can run analysis fully offline by exporting Entra data once, moving the JSON file to an offline machine, and using **Import Offline Export** on the sign-in screen.
+
+#### 1) Export from an online/admin workstation (PowerShell)
+
+```powershell
+# Install only required Microsoft Graph submodules
+Install-Module Microsoft.Graph.Authentication -Scope CurrentUser
+Install-Module Microsoft.Graph.Beta.Identity.SignIns -Scope CurrentUser
+Install-Module Microsoft.Graph.Applications -Scope CurrentUser
+Install-Module Microsoft.Graph.Identity.DirectoryManagement -Scope CurrentUser
+
+Import-Module Microsoft.Graph.Authentication
+Import-Module Microsoft.Graph.Beta.Identity.SignIns
+Import-Module Microsoft.Graph.Applications
+Import-Module Microsoft.Graph.Identity.DirectoryManagement
+
+Connect-MgGraph -Scopes `
+  "Policy.Read.All", `
+  "Application.Read.All", `
+  "Directory.Read.All", `
+  "Policy.Read.ConditionalAccess", `
+  "Organization.Read.All"
+
+$tenant = Get-MgOrganization -Top 1
+$policies = Get-MgBetaIdentityConditionalAccessPolicy -All
+$namedLocations = Get-MgIdentityConditionalAccessNamedLocation -All
+$servicePrincipals = Get-MgServicePrincipal -All -Property "id,appId,displayName,servicePrincipalType,appOwnerOrganizationId,tags"
+$authStrengthPolicies = Get-MgBetaPolicyAuthenticationStrengthPolicy -All
+$subscribedSkus = Get-MgSubscribedSku -All
+
+# Resolve policy-referenced directory objects (users/groups/roles) for friendly names
+$objectIds = [System.Collections.Generic.HashSet[string]]::new()
+foreach ($p in $policies) {
+  $u = $p.Conditions.Users
+  foreach ($id in @($u.IncludeUsers + $u.ExcludeUsers + $u.IncludeGroups + $u.ExcludeGroups + $u.IncludeRoles + $u.ExcludeRoles)) {
+    if ($id -match '^[0-9a-fA-F-]{36}$') { [void]$objectIds.Add($id) }
+  }
+}
+
+$directoryObjects = foreach ($id in $objectIds) {
+  try { Get-MgDirectoryObject -DirectoryObjectId $id -ErrorAction Stop } catch { $null }
+}
+
+$export = [ordered]@{
+  tenantId                      = $tenant.Id
+  tenantDisplayName             = $tenant.DisplayName
+  conditionalAccessPolicies     = $policies
+  namedLocations                = $namedLocations
+  servicePrincipals             = $servicePrincipals
+  directoryObjects              = $directoryObjects
+  authenticationStrengthPolicies= $authStrengthPolicies
+  subscribedSkus                = $subscribedSkus
+}
+
+$export | ConvertTo-Json -Depth 25 | Out-File ".\ca-offline-export.json" -Encoding utf8
+```
+
+#### 2) Import offline
+
+1. Open CA Policy Analyzer.
+2. On the sign-in screen, click **Import Offline Export**.
+3. Select `ca-offline-export.json`.
+4. Run analysis normally (Dashboard, Findings, Templates, CIS, Personas, Baseline Gap, exports all work).
+
+#### Regression fixture (PowerShell export shape)
+
+For parser regression checks, a canonical fixture using the PowerShell v2/Beta export structure is included at:
+
+- `docs/fixtures/offline-export-powershell-v2-shape.json`
+
+This fixture intentionally includes edge cases that previously caused offline/live mismatches:
+
+- `conditionalAccessPolicies` as a single object (not array)
+- `PascalCase` keys
+- `AdditionalProperties` wrappers
+- null-valued `IncludeLocations` / `ExcludeLocations`
+- null placeholder guest/auth-strength objects
+
 ---
 
 ## Recent Changes
 
 > Full version history lives in [CHANGELOG.md](CHANGELOG.md).
+
+### v1.16.1 — Offline Mode (July 10, 2026) — *[@chrisfriday](https://github.com/chrisfriday)*
+
+- **Import CA policies from a PowerShell JSON export** — full analysis without direct tenant connectivity. New offline import parser handles real-world `ConvertTo-Json` quirks (PascalCase, `AdditionalProperties`, UTF-16). Redesigned opening screen with two explicit paths: *Offline import* and *Direct tenant connection*. New `/offline-export` in-app guide with step-by-step PowerShell instructions. 20 MB size limit + 40-level recursion guard.
+
+### v1.16.0 — False Positive Reduction (July 10, 2026) — *[@dermo-blast](https://github.com/dermo-blast)*
+
+- **7 surgical false-positive fixes** across findings detection and persona coverage:
+  - `compliantDevice OR domainJoinedDevice` / `approvedApplication OR compliantApplication` downgrade High → Info (Microsoft-recommended equivalent-strength pattern)
+  - Agent/workload-identity policies (`includeUsers: ["None"]`) no longer flagged for missing break-glass exclusions
+  - Break-glass-aware broad-policy check — break-glass exclusions no longer counted as gaps
+  - Device Registration Bypass check is now context-aware — suppressed when a compensating MFA-for-registration policy exists
+  - Missing MFA check skips agent-identity policies and device-trust-only policies
+  - User-agent bypass downgrades to Info when a block-unknown-platforms companion policy exists
+  - Guest MFA finding: High → Info (best practice advisory, not a gap); built-in CA app groups recognised
+  - All-Users policies now credit Admins + Developers in persona coverage
 
 ### v1.15.21 — Joey Verlinden Baseline Updated to 2026.6.1 (June 11, 2026)
 
