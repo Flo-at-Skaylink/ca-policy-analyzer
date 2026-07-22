@@ -670,6 +670,38 @@ src/
 - **Center for Internet Security (CIS)** — Microsoft 365 Foundations Benchmark v7.0.0
 - **Microsoft Learn** — Conditional Access documented exclusions, token protection, Teams Rooms & Surface Hub compatibility
 
+---
+
+## Contributing
+
+### Reporting an incorrect check result
+
+If a template match or finding is reporting **Present**, **Missing**, or **Partial** incorrectly,
+please [open an issue](https://github.com/Jhope188/ca-policy-analyzer/issues/new?template=incorrect-check-report.md)
+using the **Incorrect Check / Template Match Report** template.
+
+**Required information — PRs and issues will not be reviewed without these:**
+
+| # | What to provide | How to get it |
+| --- | --- | --- |
+| 1 | **Exact template / check name** as shown in the UI | Copy from Templates or Findings tab |
+| 2 | **Expected status** and why | e.g. "should be Missing — my policy has no app-enforced restrictions" |
+| 3 | **Policy JSON** for the affected policy | `Get-MgBetaIdentityConditionalAccessPolicy -Filter "displayName eq 'NAME'" \| ConvertTo-Json -Depth 10` |
+| 4 | **Screenshot** showing the wrong result | From Templates or Findings tab |
+| 5 | **App version / date** | Visible in the app header |
+
+Issues filed without the policy JSON and a screenshot will be closed pending more information.
+
+### Submitting a fix
+
+1. Read **[docs/FIXING-CHECKS.md](docs/FIXING-CHECKS.md)** — covers fingerprint fields, scorer weights, and the regression fixture workflow.
+2. Create a minimal JSON fixture in `docs/fixtures/` to prevent regressions.
+3. Run `npx tsc --noEmit` and `npm run build` — both must be clean.
+4. Open a PR using the **PR template** (`.github/PULL_REQUEST_TEMPLATE.md`) and fill in every section, including before/after screenshots.
+5. Link the PR to the issue it resolves.
+
+---
+
 ## License
 
 MIT

@@ -1,6 +1,17 @@
+import Link from "next/link";
+
 export default function OfflineExportGuidePage() {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
+      <div className="flex items-center gap-4">
+        <Link
+          href="/"
+          className="inline-flex items-center gap-1 text-sm text-gray-400 hover:text-gray-200"
+        >
+          ← Back to analyzer
+        </Link>
+      </div>
+
       <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
         <h2 className="text-2xl font-bold text-white">Offline Export Guide</h2>
         <p className="mt-2 text-sm text-gray-400">

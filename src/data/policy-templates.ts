@@ -57,6 +57,13 @@ export interface PolicyTemplate {
 export interface TemplateFingerprint {
   /** What apps are targeted: "All", specific app IDs, or user actions */
   includeApps: string[];
+  /**
+   * When true, a policy that targets "All" apps does NOT satisfy this
+   * template's app requirement — the policy must specifically include one of
+   * the `includeApps`. Use for app-specific templates (e.g. SharePoint,
+   * O365, AVD) so a broad tenant-wide policy is not mistaken for a targeted one.
+   */
+  requireSpecificApp?: boolean;
   /** What client app types are targeted */
   clientAppTypes?: string[];
   /** What grant controls are required */
@@ -76,6 +83,8 @@ export interface TemplateFingerprint {
   sessionSignInFrequencyEveryTime?: boolean;
   sessionPersistentBrowser?: boolean;
   sessionCloudAppSecurity?: boolean;
+  /** Requires session control: application-enforced restrictions enabled */
+  sessionApplicationEnforcedRestrictions?: boolean;
   /** Platform conditions */
   platforms?: { include: string[]; exclude: string[] };
   /** Authentication flow conditions */
@@ -841,6 +850,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
       "SharePoint and OneDrive hold the majority of organizational data. Restricting access to trusted locations prevents data exfiltration from untrusted networks.",
     fingerprint: {
       includeApps: ["00000003-0000-0ff1-ce00-000000000000"],
+      requireSpecificApp: true,
       grantControls: ["block"],
       targetsAllUsers: true,
       usesLocationCondition: true,
@@ -886,7 +896,9 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
       "Application-enforced restrictions work with SharePoint admin settings to limit access to browser-only or read-only mode from unmanaged devices.",
     fingerprint: {
       includeApps: ["Office365"],
+      requireSpecificApp: true,
       targetsAllUsers: true,
+      sessionApplicationEnforcedRestrictions: true,
     },
     deploymentJson: {
       displayName: "YOURORG - APP - SESSION - O365 - TimeoutSettings",

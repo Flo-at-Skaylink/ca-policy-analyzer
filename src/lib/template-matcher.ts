@@ -77,9 +77,21 @@ function scorePolicyMatch(
  apps.includeApplications.map((a) => a.toLowerCase())
  );
 
- // A policy targeting "All" apps is strictly broader — treat as satisfying any specific-app fingerprint
- const policyTargetsAll = policyApps.has("all");
- if (policyTargetsAll || setsOverlap(fpApps, policyApps)) {
+// A policy targeting "All" apps is strictly broader — treat as satisfying any specific-app fingerprint,
+    // UNLESS the template is app-specific (requireSpecificApp) in which case the policy must
+    // explicitly include the target app. This prevents broad tenant-wide policies from being
+    // mistaken for narrowly-scoped app policies (e.g. SharePoint/O365-only templates).
+    const policyTargetsAll = policyApps.has("all");
+    const specificOverlap = setsOverlap(fpApps, policyApps);
+    if (fingerprint.requireSpecificApp) {
+      if (specificOverlap) {
+        matchedWeight += 25;
+      } else {
+        differences.push(
+          `Apps: template requires policy to specifically target [${fingerprint.includeApps.join(", ")}], policy targets [${apps.includeApplications.join(", ")}]`
+        );
+      }
+    } else if (policyTargetsAll || specificOverlap) {
  matchedWeight += 25;
  } else {
  differences.push(
@@ -368,13 +380,25 @@ function scorePolicyMatch(
  }
  }
 
- // ── Authentication flows (weight: 15) ──────────────────────────────
- if (
- fingerprint.authenticationFlows &&
- fingerprint.authenticationFlows.length > 0
- ) {
- totalWeight += 15;
- const authFlows = (policy.conditions as Record<string, unknown>)
+  // ── App-enforced restrictions (weight: 25) ─────────────────────────
+  if (fingerprint.sessionApplicationEnforcedRestrictions) {
+    totalWeight += 25;
+    if (session?.applicationEnforcedRestrictions?.isEnabled) {
+      matchedWeight += 25;
+    } else {
+      differences.push(
+        "Session: template requires app-enforced restrictions (Office 365 browser/read-only limits), not configured"
+      );
+    }
+  }
+
+  // ── Authentication flows (weight: 15) ──────────────────────────────
+  if (
+    fingerprint.authenticationFlows &&
+    fingerprint.authenticationFlows.length > 0
+  ) {
+    totalWeight += 15;
+    const authFlows = (policy.conditions as Record<string, unknown>)
  .authenticationFlows as
  | { transferMethods?: string }
  | null
