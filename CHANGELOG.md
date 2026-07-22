@@ -5,6 +5,12 @@ All notable changes to the CA Policy Analyzer will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.3] - 2026-07-22
+
+### Fixed
+
+- **Locations — "not marked as trusted" warning is now context-aware** — check #4 previously fired a `Medium` warning for *any* IP-range location used by an enabled policy that wasn't marked as trusted, including locations like `_Blocked IPs` that are intentionally included in block policies where the trusted flag is irrelevant. The warning now only fires when the tenant has at least one policy using `"All trusted locations"` — because that is the only scenario where the `isTrusted` flag actually changes user behaviour (MFA bypass, reduced sign-in frequency, risk-policy exemptions). The warning text has been updated to explain the concrete impact (number of AllTrusted policies affected) and the recommendation now explicitly acknowledges block-list locations as a valid reason to dismiss the warning.
+
 ## [1.16.2] - 2026-07-22
 
 ### Fixed
