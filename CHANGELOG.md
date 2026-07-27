@@ -5,6 +5,33 @@ All notable changes to the CA Policy Analyzer will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.3] - 2026-07-22
+
+### Fixed
+
+- **Locations — "not marked as trusted" warning is now context-aware** — check #4 previously fired a `Medium` warning for *any* IP-range location used by an enabled policy that wasn't marked as trusted, including locations like `_Blocked IPs` that are intentionally included in block policies where the trusted flag is irrelevant. The warning now only fires when the tenant has at least one policy using `"All trusted locations"` — because that is the only scenario where the `isTrusted` flag actually changes user behaviour (MFA bypass, reduced sign-in frequency, risk-policy exemptions). The warning text has been updated to explain the concrete impact (number of AllTrusted policies affected) and the recommendation now explicitly acknowledges block-list locations as a valid reason to dismiss the warning.
+
+## [1.16.2] - 2026-07-22
+
+### Fixed
+
+- **Offline Export Instructions link 404 on GitHub Pages** — the "Offline Export Instructions" button on the landing screen used a plain `<a href="/offline-export">` tag. On GitHub Pages the site is served from `/ca-policy-analyzer/`, so the absolute path routed to `https://jhope188.github.io/offline-export` (missing the repo prefix) and returned a 404. Replaced with Next.js `<Link href="/offline-export">` which automatically prepends `basePath` at build time. Added a **← Back to analyzer** `<Link>` on the offline export guide page so users can return without the browser back button.
+
+- **False "Present" for `APP - SESSION - O365 - TimeoutSettings`** — fingerprint now requires `sessionApplicationEnforcedRestrictions: true` (weight 25) and `requireSpecificApp: true`. Previously any policy targeting All Users + any app (e.g. "Require MFA for all users") scored 100 % because the distinctive session control was absent from the fingerprint. The check now only reports Present when the matched policy specifically targets Office 365 **and** has app-enforced restrictions enabled.
+
+- **False "Present" for `APP - BLOCK - SharePoint-OneDrive - NonTrustedLocations`** — fingerprint now sets `requireSpecificApp: true`. Previously the app-targeting scorer gave full credit to any policy targeting "All" apps (e.g. a generic block-by-IP/country policy targeting all resources) because "All ⊇ SharePoint". This template now requires the policy to explicitly target the SharePoint Online app ID (`00000003-0000-0ff1-ce00-000000000000`) — generic all-apps block policies no longer match.
+
+- **Template matcher — `requireSpecificApp` flag** — `src/lib/template-matcher.ts` now respects a new `requireSpecificApp?: boolean` fingerprint field. When set, a policy targeting `includeApplications: ["All"]` does **not** satisfy the app requirement; the policy must specifically list the app. The existing broader behaviour (All apps satisfies any template) is preserved for all templates that do not set this flag.
+
+- **Template matcher — `sessionApplicationEnforcedRestrictions` scoring** — added a 25-point branch to `scorePolicyMatch()` for the app-enforced restrictions session control, enabling templates to fingerprint O365 browser-only / read-only settings policies accurately.
+
+### Added
+
+- **`.github/ISSUE_TEMPLATE/incorrect-check-report.md`** — structured bug-report template for incorrect template match or analyzer finding results. Captures: check name, expected vs actual status, policy JSON, screenshots, and browser/version info.
+- **`.github/PULL_REQUEST_TEMPLATE.md`** — PR template covering root cause, per-file change summary, before/after status table, and a full checklist (TypeScript, build, regression fixture, CHANGELOG, category metadata).
+- **`docs/FIXING-CHECKS.md`** — developer guide for fixing checks and template fingerprints. Covers fingerprint field reference table (all fields + weights), step-by-step fingerprint fix workflow, analyzer check function template, regression fixture instructions, and common pitfalls.
+- **`README.md` Contributing section** — documents required information for bug reports and PRs (policy JSON, screenshot, expected status), links to the new guide, and sets expectations for incomplete issues.
+
 ## [1.16.1] - 2026-07-10
 
 ### Added

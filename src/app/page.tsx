@@ -25,6 +25,7 @@ import { exportToExcel, exportToPowerPoint, loadDefaultLogo } from "@/lib/export
 import { buildTenantContextFromOfflineExport, OfflineExportPayload } from "@/lib/offline-import";
 import { loginRequest } from "@/lib/msal-config";
 import { Shield, Loader2, Play, Download, RefreshCw, LayoutDashboard, FileText, AlertTriangle, Layers, CheckSquare, BookOpen, FileSpreadsheet, Presentation, MapPin, Users, GitCompareArrows } from "lucide-react";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 type ViewTab = "dashboard" | "policies" | "findings" | "templates" | "baseline" | "cis" | "locations" | "personas" | "ms-learn";
@@ -294,12 +295,12 @@ export default function Home() {
                 <Download className="h-4 w-4" />
                 Import Offline Export
               </label>
-              <a
+              <Link
                 href="/offline-export"
                 className="inline-flex items-center gap-2 rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-300 hover:bg-gray-800"
               >
                 Offline Export Instructions
-              </a>
+              </Link>
             </div>
             <input
               id="offline-import"

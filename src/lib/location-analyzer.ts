@@ -214,26 +214,34 @@ export function analyzeNamedLocations(context: TenantContext): LocationAnalysisR
       }
     }
 
-    // 4) Named location is not trusted — general awareness
-    //    Country locations do NOT have a trusted toggle (only IP-range locations do),
-    //    so we skip this warning for country-based locations.
-    if (
-      !loc.isTrusted &&
-      allRefs.length > 0 &&
-      loc["@odata.type"] !== "#microsoft.graph.countryNamedLocation"
-    ) {
-      const enabledRefs = allRefs.filter((r) => r.policyState === "enabled");
-      if (enabledRefs.length > 0) {
-        analysis.warnings.push({
-          level: "medium",
-          title: "Location used by active policies but not marked as trusted",
-          detail:
-            `"${loc.displayName}" is referenced by ${enabledRefs.length} enabled policy(ies) but is not marked ` +
-            `as trusted. If any of these policies condition on "All trusted locations", ` +
-            `this location's IP ranges will not be included in the trusted set.`,
-          recommendation:
-            `Review whether "${loc.displayName}" should be marked as trusted. If it represents ` +
-            `corporate offices, VPN exit points, or other known-good networks, mark it as trusted.`,
+// 4) Named location is not trusted — warn only when it actually matters:
+      //    the tenant must have at least one policy using "All trusted locations".
+      //    If no policies use AllTrusted, the isTrusted flag has no behavioural
+      //    effect, so flagging every unreferenced location is noise (e.g. a
+      //    "_Blocked IPs" list included in a block policy should never be
+      //    trusted — raising Medium there is misleading).
+      //    Country locations do NOT have a trusted toggle, so skip them here.
+      if (
+        !loc.isTrusted &&
+        allRefs.length > 0 &&
+        policiesUsingAllTrusted.length > 0 &&
+        loc["@odata.type"] !== "#microsoft.graph.countryNamedLocation"
+      ) {
+        const enabledRefs = allRefs.filter((r) => r.policyState === "enabled");
+        if (enabledRefs.length > 0) {
+          analysis.warnings.push({
+            level: "medium",
+            title: "Location used by active policies but not marked as trusted",
+            detail:
+              `"${loc.displayName}" is referenced by ${enabledRefs.length} enabled policy(ies) but is not marked ` +
+              `as trusted. This tenant has ${policiesUsingAllTrusted.length} policy(ies) that condition on ` +
+              `"All trusted locations" — because this location is NOT trusted, users signing in from ` +
+              `its IP ranges will NOT benefit from trusted-location exclusions (e.g. MFA bypass, ` +
+              `reduced sign-in frequency, or risk-policy exemptions).`,
+            recommendation:
+              `If "${loc.displayName}" represents a known-good network (corporate office, VPN exit point, ` +
+              `datacenter), mark it as trusted in Entra ID → Protection → Conditional Access → Named locations. ` +
+              `If it is intentionally untrusted (e.g. a block-list of malicious IPs), dismiss this warning.`,
         });
       }
     }
