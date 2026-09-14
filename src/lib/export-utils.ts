@@ -45,11 +45,14 @@ function isMicrosoftManaged(pr: PolicyResult): boolean {
 /** Load the default logo from public/logo.png as a base64 data URI */
 export async function loadDefaultLogo(): Promise<string | null> {
   try {
-    // Try multiple paths to handle both local dev and GitHub Pages deployment
+    // Try multiple paths to handle both local dev and GitHub Pages deployment.
+    // logo.png in public/ is the Conditionalaccess.tech brand logo.
+    const base = `${window.location.origin}/ca-policy-analyzer`;
     const candidates = [
       `${window.location.origin}${window.location.pathname.replace(/\/[^/]*$/, "")}/logo.png`,
-      `${window.location.origin}/ca-policy-analyzer/logo.png`,
+      `${base}/logo.png`,
       `${window.location.origin}/logo.png`,
+      `${base}/docs/screenshots/Conditionalaccess.tech.png`,
     ];
 
     for (const url of candidates) {
@@ -91,7 +94,7 @@ function stateLabel(state: string): string {
 }
 
 function joinOrNone(arr: string[] | undefined): string {
-  return arr && arr.length > 0 ? arr.join(", ") : "—";
+  return arr && arr.length > 0 ? arr.join(", ") : "-";
 }
 
 function datestamp(): string {
@@ -116,9 +119,9 @@ export function exportToExcel(
   // ── Sheet 1: Summary ────────────────────────────────────────────────
   const s = analysis.tenantSummary;
   const summaryData = [
-    ["CA Policy Analyzer — Export", ""],
-    ["Tenant", options?.tenantDisplayName ?? "—"],
-    ["Tenant ID", options?.tenantId ?? "—"],
+    ["CA Policy Analyzer - Export", ""],
+    ["Tenant", options?.tenantDisplayName ?? "-"],
+    ["Tenant ID", options?.tenantId ?? "-"],
     ["Generated", new Date().toLocaleString()],
     [""],
     ["Policy Summary", ""],
@@ -299,23 +302,24 @@ export async function exportToPowerPoint(
   const titleSlide = pptx.addSlide();
   titleSlide.background = { color: COLORS.bg };
 
-  // Logo — top-right corner (customisable placeholder)
+  // Logo - top-right corner. Logo is 1024×1024 (square) so keep 1:1 aspect ratio.
+  // Slide width = 10" (pptxgenjs default). Logo at 1.8" square, 0.3" from right/top edge.
   const logoData = options?.logoBase64;
+  const LOGO_SIZE = 1.8; // inches - square
   if (logoData) {
     titleSlide.addImage({
       data: logoData,
-      x: 8.5,
-      y: 0.4,
-      w: 3.8,
-      h: 2.53,
-      rounding: true,
+      x: 7.9,  // 10 - 1.8 - 0.3 = right-aligned with margin
+      y: 0.3,
+      w: LOGO_SIZE,
+      h: LOGO_SIZE,
     });
   }
 
   titleSlide.addText("Conditional Access\nPolicy Analysis", {
     x: 0.8,
     y: 1.5,
-    w: logoData ? 7.5 : 11,
+    w: logoData ? 6.8 : 11,
     h: 2.5,
     fontSize: 36,
     fontFace: "Arial",
@@ -370,20 +374,20 @@ export async function exportToPowerPoint(
   if (!logoData) {
     // Placeholder hint when no logo is provided
     titleSlide.addShape("rect" as PptxGenJS.ShapeType, {
-      x: 9.2,
-      y: 0.5,
-      w: 3,
-      h: 2,
+      x: 8.1,
+      y: 0.3,
+      w: 1.8,
+      h: 1.8,
       fill: { color: COLORS.card },
       rectRadius: 0.1,
       line: { color: COLORS.muted, dashType: "dash", width: 1 },
     });
     titleSlide.addText("Your Logo Here", {
-      x: 9.2,
-      y: 1.1,
-      w: 3,
+      x: 8.1,
+      y: 0.95,
+      w: 1.8,
       h: 0.5,
-      fontSize: 12,
+      fontSize: 11,
       fontFace: "Arial",
       color: COLORS.muted,
       align: "center",
@@ -550,7 +554,7 @@ export async function exportToPowerPoint(
   // ── Persona × Control Coverage ─────────────────────────────────────
   if (options?.personaResult) {
     addPersonaCoverageSlide(pptx, options.personaResult);
-    // Per-persona detail slides — one slide per persona with assigned policies
+    // Per-persona detail slides - one slide per persona with assigned policies
     addPerPersonaSlides(pptx, options.personaResult, options?.baselineGap ?? undefined);
   }
 
@@ -687,7 +691,7 @@ function addPolicySlide(pptx: PptxGenJS, pr: PolicyResult, maps?: GuidResolverMa
     ["Platforms", joinOrNone(policy.conditions.platforms?.includePlatforms)],
     ["User Risk", joinOrNone(policy.conditions.userRiskLevels)],
     ["Sign-in Risk", joinOrNone(policy.conditions.signInRiskLevels)],
-  ].filter((row) => row[1] !== "—");
+  ].filter((row) => row[1] !== "-");
 
   if (details.length > 0) {
     slide.addText("Condition Details", {
@@ -1204,7 +1208,7 @@ function addPersonaDetailSlide(
     const statusText =
       c.status === "present" ? "✓ Present" :
       c.status === "partial" ? "⚠ Partial" :
-      c.status === "missing" ? "✗ Missing" : "— n/a";
+      c.status === "missing" ? "✗ Missing" : "- n/a";
     controlRows.push([
       { text: statusText, options: { color: statusColor, bold: true } },
       { text: c.label, options: { color: COLORS.text } },
@@ -1258,7 +1262,7 @@ function addPersonaDetailSlide(
       });
     });
 
-    // Top entries — sort by severity, take 6
+    // Top entries - sort by severity, take 6
     const sevRank: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
     const topEntries = [...bucket.entries]
       .sort((a, b) => (sevRank[a.severity] ?? 9) - (sevRank[b.severity] ?? 9))

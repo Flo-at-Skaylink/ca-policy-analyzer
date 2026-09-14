@@ -5,6 +5,40 @@ All notable changes to the CA Policy Analyzer will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.1] - 2026-09-03
+
+### Fixed
+
+- **Locations — false positive on country/region locations under "All trusted locations"** (issue #19) - check #2 in `checkLocationConditions` no longer flags `#microsoft.graph.countryNamedLocation` entries as "not trusted." Only IP-range named locations can ever be marked trusted (["The All trusted locations option only applies to Named locations that have IP ranges selected"](https://learn.microsoft.com/entra/identity/conditional-access/location-condition)) - country/region locations always report `isTrusted: false` and that is not a misconfiguration.
+- **Credential Registration Constraints — false positive when MFA is an OR alternative** (issue #19) - `checkCredentialRegistrationConstraints` no longer flags device compliance / approved-app / app-protection requirements as blocking WHfB/Platform SSO registration when the grant operator is `OR` and MFA (or an authentication strength) is also an accepted control. A brand-new, unenrolled device can still satisfy the policy via MFA, so device/app compliance is an alternative path, not a hard gate.
+- **Grant Control Operator — false positive on device-trust OR app-protection** (issue #19) - `checkGrantControlOperator` now also accepts an `OR` that spans **both** the device-trust group (`compliantDevice`, `domainJoinedDevice`) and the app-protection group (`approvedApplication`, `compliantApplication`) as an equivalent-strength pattern, not just an OR within a single group. This is Microsoft's recommended MDM-or-MAM pattern for mobile/BYOD (managed device satisfies compliance, unmanaged BYOD satisfies MAM instead) - both are management-based controls, so there is no "weakest link" to downgrade to. Disabled/report-only policies are still evaluated here by design, per repo owner guidance on the issue thread, so admins keep seeing potential impact before switching a policy on.
+- **Offline export — wrong PowerShell cmdlet for named locations** (issue #21) - both README.md and the in-app `/offline-export` guide called `Get-MgIdentityConditionalAccessNamedLocation`, whose module (`Microsoft.Graph.Identity.SignIns`) is never imported by the documented setup (only the beta module is). Fixed to `Get-MgBetaIdentityConditionalAccessNamedLocation`, matching the beta cmdlets used everywhere else in the script. A tenant with any named locations configured would have had this step silently fail or throw, producing an export with an empty/missing `namedLocations` array.
+- **Offline import — file picker missing when a stale auth session is present** (issue #23) - the "Import Offline Export" control only existed on the signed-out landing screen. A user with any cached MSAL session in `sessionStorage` (e.g. a reused browser tab, or someone who previously signed in) lands on the "Ready to Analyze" (authenticated) screen instead, where no offline-import option existed at all - matching reports that "after loading the offline json, nothing happens" (there was in fact no way to load a file from that screen). Added a matching Import Offline Export control (and Offline Export Instructions link) to the authenticated-but-no-result screen.
+
+### Verified
+
+- **Offline export 404** (issue #22) - re-tested against the live deployed site; the `<Link href="/offline-export">` fix shipped in v1.16.2 is confirmed working (no 404). No further code change required.
+
+
+
+### Added
+
+- **New findings category: "Missing Service Principals"** - apps that signed in over the last 30 days but have no service principal. Such an app isn't in the Conditional Access app picker at all, so it can be neither included nor excluded; only a policy targeting *All resources* reaches it ([Microsoft docs](https://learn.microsoft.com/entra/identity/conditional-access/concept-conditional-access-cloud-apps)). Discovery diffs `/beta/auditLogs/signInEventsAppSummary` against your service principals; per app it shows the evidence from your own logs (last seen, Request ID, user, IP, client app, deep links to Graph Explorer and the Entra sign-in logs) and what Entra recorded in `appliedConditionalAccessPolicies` on that sign-in.
+- **Policy impact evaluator** (`src/lib/policy-app-impact.ts`) - which policies would hit an app once it exists, as `willApply` / `mayApply` / `willNotApply`. Covers include/exclude by app ID, `None`, the `Office365` suite, application filters on custom security attributes, `clientAppTypes`, user scoping and workload identities; other conditions are reported as gates that must also match.
+- **Phantom exclusion detection** - a policy excluding an app that has no service principal. The exclusion protects nothing today and becomes live the moment the app is created. Its own critical finding.
+- **Generated PowerShell script** - `Register-MissingServicePrincipals.ps1`, downloadable from the finding. `-WhatIf`-first, and apps an enabled block policy would catch carry a `# BLOCKED BY: <policy>` comment on the line you'd delete.
+- **The sign-in log scan is optional, and its scope is requested incrementally.** It is on by default; a *Scan sign-in logs* switch on the connect and Run Analysis screens turns it off, and the choice is remembered per browser. With it off the app only ever asks for the three base scopes, skips the heaviest step of the run, and the category reports itself as not scanned. `AuditLog.Read.All` is read-only but needs admin consent and Entra ID P1, so asking for it up front would block the whole analysis in tenants that can't grant it.
+- **Step-by-step run progress** - the single spinning label inside the Run Analysis button is replaced by the actual step list for this run, with a progress bar and the skipped step named. The list comes from `src/lib/run-steps.ts`, which both the Graph client and the UI read, so an emitted label can't drift from the rendered one and leave the run looking frozen.
+- **Completion panel** - score, grade, policies read, findings by severity and elapsed time when a run finishes, holding briefly before the dashboard takes over. Accent goes amber rather than green when critical findings are open. Offers a one-click re-scan with sign-in logs when the scan was skipped.
+- **Offline mode** - the export script now emits a `signInApps` dataset. Older exports import fine.
+- **Self-checks** - `check-policy-app-impact.ts` (24), `check-findings-render.tsx` (21), `check-links.ts`, `check-auth-url.ts` (6). Run with `npx tsx`.
+
+### Changed
+
+- **Interactive token fallback redirects instead of opening a popup** (`src/lib/graph-client.ts`) - requesting a scope the cached token doesn't cover makes this previously unreachable fallback fire, which is how incremental consent for the sign-in log scan is delivered. `acquireTokenPopup` leaves a `Popup`-type response in the URL that makes MSAL's `isInPopup()` true, after which every `acquireTokenSilent` throws `block_nested_popups` for the rest of the session.
+
+**Upgrade note:** existing sessions are unaffected until the sign-in log scan is used. Switching it on triggers one consent redirect for `AuditLog.Read.All`.
+
 ## [1.16.3] - 2026-07-22
 
 ### Fixed
