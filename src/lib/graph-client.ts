@@ -166,6 +166,39 @@ export interface UnregisteredSignInAppsResult {
   windowStart: string;
 }
 
+/**
+ * A single sign-in event attributed to one policy via
+ * `appliedConditionalAccessPolicies`. `status` reflects Entra's own verdict
+ * for that policy on that event - "blocked" for an enabled policy that denied
+ * access, "wouldBlock" for a report-only policy that would have.
+ */
+export interface PolicySignInMatch {
+  id: string;
+  createdDateTime: string;
+  userPrincipalName?: string;
+  ipAddress?: string;
+  location?: string;
+  clientAppUsed?: string;
+  status: "blocked" | "wouldBlock";
+  /** Human-readable reason derived from conditionsNotSatisfied / grant controls */
+  failureReason?: string;
+  failureDetail?: string;
+}
+
+export interface PolicySignInMatches {
+  matches: PolicySignInMatch[];
+  /** More matches exist for this policy than we kept (capped per policy). */
+  truncated: boolean;
+}
+
+export interface PolicySignInLogResult {
+  /** Keyed by Conditional Access policy ID */
+  byPolicy: Map<string, PolicySignInMatches>;
+  windowStart: string;
+  /** Hit the overall scan row cap - some recent sign-ins may not be reflected. */
+  scanTruncated: boolean;
+}
+
 export interface AuthenticationStrengthPolicy {
   id: string;
   displayName: string;
@@ -213,6 +246,9 @@ export interface TenantContext {
   /** Undefined when the scan was skipped - no AuditLog.Read.All, no P1, or an
    * offline export that predates this dataset. */
   unregisteredSignInApps?: UnregisteredSignInAppsResult;
+  /** Per-policy sign-in log matches (blocked / would-block). Undefined when
+   * the sign-in log scan was skipped, same conditions as unregisteredSignInApps. */
+  policySignInMatches?: PolicySignInLogResult;
   /**
    * Tenant-wide Conditional Access settings (identity/conditionalAccess/settings).
    * Null when the tenant has no advancedSettings saved, or when the fetch
@@ -579,6 +615,140 @@ export async function fetchUnregisteredSignInApps(
   };
 }
 
+/** Cap on total sign-in rows scanned per run - bounds request volume for tenants
+ * with heavy sign-in traffic. Surfaced as `scanTruncated`. */
+const POLICY_SIGNIN_SCAN_ROW_CAP = 500;
+const POLICY_SIGNIN_PAGE_SIZE = 100;
+/** Cap on matches kept per policy - the UI only needs a representative sample. */
+const POLICY_SIGNIN_MATCHES_PER_POLICY_CAP = 25;
+
+const POLICY_SIGNIN_SELECT = [
+  "id",
+  "createdDateTime",
+  "userPrincipalName",
+  "ipAddress",
+  "location",
+  "clientAppUsed",
+  "appliedConditionalAccessPolicies",
+].join(",");
+
+function formatSignInLocation(location: unknown): string | undefined {
+  const loc = location as
+    | { city?: string; state?: string; countryOrRegion?: string }
+    | undefined;
+  if (!loc) return undefined;
+  const parts = [loc.city, loc.state, loc.countryOrRegion].filter(Boolean);
+  return parts.length > 0 ? parts.join(", ") : undefined;
+}
+
+/** Best-effort friendly reason from the enum fields Entra records. */
+function describeFailureReason(
+  applied: AppliedCaPolicy
+): { reason?: string; detail?: string } {
+  if (applied.conditionsNotSatisfied) {
+    const first = applied.conditionsNotSatisfied.split(",")[0]?.trim();
+    return {
+      reason: first ? `${first} condition not satisfied` : undefined,
+      detail: `conditionsNotSatisfied: ${applied.conditionsNotSatisfied}`,
+    };
+  }
+  if (applied.enforcedGrantControls?.length) {
+    return {
+      reason: "Blocked by Conditional Access",
+      detail: `Enforced grant controls: ${applied.enforcedGrantControls.join(", ")}`,
+    };
+  }
+  return {};
+}
+
+/**
+ * Scans recent sign-ins and attributes each to the Conditional Access
+ * policies it matched, keeping only the ones a policy blocked (enabled) or
+ * would have blocked (report-only). Requires `AuditLog.Read.All`.
+ */
+export async function fetchPolicySignInMatches(
+  client: Client,
+  policies: ConditionalAccessPolicy[]
+): Promise<PolicySignInLogResult> {
+  const windowStart = new Date(
+    Date.now() - DISCOVERY_WINDOW_DAYS * 24 * 60 * 60 * 1000
+  )
+    .toISOString()
+    .replace(/\.\d{3}Z$/, ".000Z");
+
+  const knownPolicyIds = new Set(policies.map((p) => p.id));
+  const byPolicy = new Map<string, PolicySignInMatches>();
+  let scanTruncated = false;
+  let rowsScanned = 0;
+  let nextLink: string | undefined =
+    `/auditLogs/signIns?$filter=${encodeURIComponent(
+      `createdDateTime ge ${windowStart}`
+    )}&$select=${POLICY_SIGNIN_SELECT}&$top=${POLICY_SIGNIN_PAGE_SIZE}`;
+
+  while (nextLink && rowsScanned < POLICY_SIGNIN_SCAN_ROW_CAP) {
+    let response;
+    try {
+      response = await client
+        .api(nextLink)
+        .version("beta")
+        .header("Prefer", "include-unknown-enum-members")
+        .get();
+    } catch {
+      break;
+    }
+
+    const rows: Array<Record<string, unknown>> = response?.value ?? [];
+    for (const row of rows) {
+      rowsScanned++;
+      const applied = normalizeAppliedPolicies(
+        row.appliedConditionalAccessPolicies
+      );
+      if (!applied) continue;
+
+      for (const ap of applied) {
+        if (!ap.id || !knownPolicyIds.has(ap.id)) continue;
+        const status: "blocked" | "wouldBlock" | null =
+          ap.result === "failure"
+            ? "blocked"
+            : ap.result === "reportOnlyFailure"
+            ? "wouldBlock"
+            : null;
+        if (!status) continue;
+
+        let entry = byPolicy.get(ap.id);
+        if (!entry) {
+          entry = { matches: [], truncated: false };
+          byPolicy.set(ap.id, entry);
+        }
+        if (entry.matches.length >= POLICY_SIGNIN_MATCHES_PER_POLICY_CAP) {
+          entry.truncated = true;
+          continue;
+        }
+
+        const { reason, detail } = describeFailureReason(ap);
+        entry.matches.push({
+          id: `${row.id}-${ap.id}`,
+          createdDateTime: row.createdDateTime as string,
+          userPrincipalName: (row.userPrincipalName as string) || undefined,
+          ipAddress: (row.ipAddress as string) || undefined,
+          location: formatSignInLocation(row.location),
+          clientAppUsed: (row.clientAppUsed as string) || undefined,
+          status,
+          failureReason: reason,
+          failureDetail: detail,
+        });
+      }
+    }
+
+    nextLink = response?.["@odata.nextLink"];
+    if (rowsScanned >= POLICY_SIGNIN_SCAN_ROW_CAP && nextLink) {
+      scanTruncated = true;
+    }
+  }
+
+  return { byPolicy, windowStart, scanTruncated };
+}
+
 /**
  * GET /identity/conditionalAccess/settings (beta) - returns a single $entity
  * describing tenant-wide baseline enforcement (Low-Privilege Scope
@@ -854,6 +1024,7 @@ export async function loadTenantContext(
   // The heaviest step, and the only one needing AuditLog.Read.All. Downstream
   // already treats an absent result as "not scanned".
   let unregisteredSignInApps: UnregisteredSignInAppsResult | undefined;
+  let policySignInMatches: PolicySignInLogResult | undefined;
   if (includeSignInLogs) {
     onProgress?.(RUN_STEPS.signInLogs);
     try {
@@ -865,6 +1036,15 @@ export async function loadTenantContext(
       // Needs AuditLog.Read.All and Entra ID P1 - degrade, don't fail the run
       console.warn(
         "Could not scan sign-in logs for unregistered service principals - skipping that check.",
+        e
+      );
+    }
+    try {
+      policySignInMatches = await fetchPolicySignInMatches(client, policies);
+    } catch (e) {
+      // Needs AuditLog.Read.All - degrade, don't fail the run
+      console.warn(
+        "Could not scan sign-in logs for per-policy matches - skipping that check.",
         e
       );
     }
@@ -898,5 +1078,5 @@ export async function loadTenantContext(
     if (domain) tenantDisplayName = domain;
   }
 
-  return { tenantDisplayName, tenantId, policies, namedLocations, servicePrincipals, directoryObjects, licenses, authStrengthPolicies, unregisteredSignInApps, conditionalAccessSettings };
+  return { tenantDisplayName, tenantId, policies, namedLocations, servicePrincipals, directoryObjects, licenses, authStrengthPolicies, unregisteredSignInApps, policySignInMatches, conditionalAccessSettings };
 }
