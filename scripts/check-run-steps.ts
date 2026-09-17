@@ -28,14 +28,21 @@ const checks: Array<[string, () => void]> = [
     },
   ],
   [
-    "scan off drops the sign-in step from the list, keeps every other one",
+    "scan off drops both sign-in steps from the list, keeps every other one",
     () => {
       const on = liveStepList(true);
       const off = liveStepList(false);
       assert.ok(on.includes(RUN_STEPS.signInLogs));
+      assert.ok(on.includes(RUN_STEPS.signInPolicyMatches));
       assert.ok(!off.includes(RUN_STEPS.signInLogs));
-      assert.equal(off.length, on.length - 1);
-      assert.deepEqual(off, on.filter((s) => s !== RUN_STEPS.signInLogs));
+      assert.ok(!off.includes(RUN_STEPS.signInPolicyMatches));
+      assert.equal(off.length, on.length - 2);
+      assert.deepEqual(
+        off,
+        on.filter(
+          (s) => s !== RUN_STEPS.signInLogs && s !== RUN_STEPS.signInPolicyMatches
+        )
+      );
     },
   ],
   [
@@ -51,6 +58,7 @@ const checks: Array<[string, () => void]> = [
     () => {
       assert.equal(offlineStepList[0], RUN_STEPS.parseOffline);
       assert.ok(!offlineStepList.includes(RUN_STEPS.signInLogs));
+      assert.ok(!offlineStepList.includes(RUN_STEPS.signInPolicyMatches));
       assert.ok(!offlineStepList.includes(RUN_STEPS.policies));
     },
   ],

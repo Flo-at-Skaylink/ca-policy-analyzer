@@ -1039,6 +1039,7 @@ export async function loadTenantContext(
         e
       );
     }
+    onProgress?.(RUN_STEPS.signInPolicyMatches);
     try {
       policySignInMatches = await fetchPolicySignInMatches(client, policies);
     } catch (e) {
