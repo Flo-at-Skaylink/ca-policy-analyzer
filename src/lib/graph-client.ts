@@ -760,13 +760,7 @@ export async function fetchPolicySignInMatches(
   const scanStart = Date.now();
   let nextLink: string | undefined =
     `/auditLogs/signIns?$filter=${encodeURIComponent(
-      // conditionalAccessStatus ne 'notApplied' drops rows CA never evaluated
-      // at all - they carry no usable appliedConditionalAccessPolicies data
-      // for either matches or baseline evidence, and in a busy tenant they
-      // can be most of the traffic. Skipping them server-side avoids paying
-      // this endpoint's expensive per-row cost (populating
-      // appliedConditionalAccessPolicies) on rows we'd discard anyway.
-      `createdDateTime ge ${windowStart} and conditionalAccessStatus ne 'notApplied'`
+      `createdDateTime ge ${windowStart}`
     )}&$select=${POLICY_SIGNIN_SELECT}&$top=${POLICY_SIGNIN_PAGE_SIZE}`;
 
   while (
@@ -782,9 +776,13 @@ export async function fetchPolicySignInMatches(
         .header("Prefer", "include-unknown-enum-members")
         .get();
       response = await withTimeout(request, POLICY_SIGNIN_REQUEST_TIMEOUT_MS);
-    } catch {
+    } catch (error) {
       // A single stalled/slow page or a real error - stop rather than hang
       // or retry indefinitely; whatever was collected so far is still valid.
+      // Logged (not swallowed) so a bad request (e.g. an unsupported $filter
+      // clause returning 400) is visible in the console instead of silently
+      // producing a scan that looks like "zero matches everywhere".
+      console.warn("[fetchPolicySignInMatches] request failed:", error);
       scanTruncated = true;
       break;
     }
