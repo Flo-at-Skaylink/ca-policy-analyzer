@@ -635,7 +635,10 @@ export async function fetchUnregisteredSignInApps(
 /** Cap on total sign-in rows scanned per run - bounds request volume for tenants
  * with heavy sign-in traffic. Surfaced as `scanTruncated`. */
 const POLICY_SIGNIN_SCAN_ROW_CAP = 500;
-const POLICY_SIGNIN_PAGE_SIZE = 100;
+/** Larger than the unregistered-apps page size - fewer round trips against an
+ * endpoint whose per-row cost (populating appliedConditionalAccessPolicies)
+ * dwarfs its per-request latency, so bigger pages are a clear win here. */
+const POLICY_SIGNIN_PAGE_SIZE = 200;
 /** Cap on matches kept per policy - the UI only needs a representative sample. */
 const POLICY_SIGNIN_MATCHES_PER_POLICY_CAP = 25;
 /**
@@ -757,7 +760,13 @@ export async function fetchPolicySignInMatches(
   const scanStart = Date.now();
   let nextLink: string | undefined =
     `/auditLogs/signIns?$filter=${encodeURIComponent(
-      `createdDateTime ge ${windowStart}`
+      // conditionalAccessStatus ne 'notApplied' drops rows CA never evaluated
+      // at all - they carry no usable appliedConditionalAccessPolicies data
+      // for either matches or baseline evidence, and in a busy tenant they
+      // can be most of the traffic. Skipping them server-side avoids paying
+      // this endpoint's expensive per-row cost (populating
+      // appliedConditionalAccessPolicies) on rows we'd discard anyway.
+      `createdDateTime ge ${windowStart} and conditionalAccessStatus ne 'notApplied'`
     )}&$select=${POLICY_SIGNIN_SELECT}&$top=${POLICY_SIGNIN_PAGE_SIZE}`;
 
   while (
