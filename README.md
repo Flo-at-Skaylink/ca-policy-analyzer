@@ -21,7 +21,6 @@
 
 The app runs **100% in your browser** — your data never leaves your machine. It connects directly to Microsoft Graph using your own credentials (delegated permissions).
 
-![New Conditional Access Policy Analyzer](docs/screenshots/CondtionalAccessAnalyzer.png)
 
 ### Offline Mode (No Direct Tenant Access)
 
@@ -116,7 +115,7 @@ This fixture intentionally includes edge cases that previously caused offline/li
 - **Offline import - missing file picker for signed-in users** (issue #23) - the Import Offline Export control only existed on the signed-out landing screen. A stale cached session (reused tab, prior sign-in) skipped straight to "Ready to Analyze," where there was no way to load a file at all. Added the offline-import control to that screen too.
 - **Offline export 404 - confirmed already fixed** (issue #22) - re-verified against the live site; the `<Link>`-based fix from v1.16.2 is working correctly.
 
-### v1.17.0 - Missing Service Principals (September 2, 2026)
+### v1.17.0 - Missing Service Principals (September 2, 2026) - *[@royklo](https://github.com/royklo), [PR #31](https://github.com/Jhope188/ca-policy-analyzer/pull/31)*
 
 - **New check: apps in your sign-in logs with no service principal.** Such an app isn't in the Conditional Access app picker, so it can be neither included nor excluded; only a policy targeting *All resources* reaches it. Discovery diffs `/beta/auditLogs/signInEventsAppSummary` against your service principals and shows the evidence from your own logs plus what Entra recorded in `appliedConditionalAccessPolicies` on that sign-in.
 - **Impact preview before you register anything** - which policies would hit the app once it exists, as will apply / may apply / will not apply, covering include/exclude by ID, the `Office365` suite, application filters on custom security attributes, client app types, user scoping and workload identities.
