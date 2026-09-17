@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Findings display and logic are unchanged - this is purely an additional section beneath it.
   - Design was validated against a static HTML mockup (`docs/mockups/sign-in-log-findings-mockup.html`) before implementation.
 
+### Fixed
+
+- **"Baseline Enforcement" finding recommended a redundant policy when enforcement was already silently active** - `checkBaselineEnforcement` treated `advancedSettings.baselineScopes` reading null/unset as "not enforced" and recommended deploying a dedicated Windows Azure AD Graph policy. That field is ambiguous by design: Microsoft's Low-Privilege Scope Enforcement rollout (MC1223829) enables itself tenant-wide automatically and never writes a record when it does, so "unset" reads identically whether the rollout hasn't reached the tenant yet or has already completed. ([Mike Crowley - Preparing for and Responding to MC1223829](https://mikecrowley.us/2026/08/03/ca-baseline-scopes-enforcement-impact/))
+  - `fetchPolicySignInMatches()` now also collects empirical evidence during its existing sign-in log scan (no extra Graph calls): for each policy, whether it was actually evaluated (`success` / `failure` / `reportOnlySuccess` / `reportOnlyFailure`, not `notApplied`/`notEnabled`) against a sign-in whose resource was Windows Azure Active Directory - proof the tenant is already routing baseline-scope requests through that policy regardless of what the tenant setting shows.
+  - New `PolicySignInLogResult.baselineAudienceEvidence` map (policy ID → most recent matching sign-in date).
+  - `checkBaselineEnforcement` now checks this evidence before recommending a new policy: if found, the finding is downgraded to **Info** ("Baseline scope enforcement already active - detected via sign-in logs") and the "deploy a policy" recommendation is dropped. No change in behavior when the sign-in log scan is off or no evidence is found - the original High-severity recommendation still fires.
+
 ## [1.17.1] - 2026-09-03
 
 ### Fixed

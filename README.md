@@ -114,6 +114,7 @@ This fixture intentionally includes edge cases that previously caused offline/li
 - **Table shows User, Date/Time, Location, Client App, Status, and Failure Reason** for every match, with a count badge (red "N blocked", amber "N would be blocked", or green "0 in last 30 days").
 - **Uses the existing sign-in log scan toggle and permission gate** - no new consent prompt. When the scan hasn't been run, the section shows a "not scanned" notice instead.
 - **Scan is capped** (500 rows per run, 25 matches per policy) with the UI saying so when a cap is hit, rather than implying full coverage.
+- **Fixed: "Baseline Enforcement" no longer recommends a redundant policy when enforcement is already silently active.** Microsoft's Low-Privilege Scope Enforcement rollout (MC1223829) enables itself tenant-wide automatically and never records that it did, so `advancedSettings.baselineScopes` reading null/unset is ambiguous - it looks the same whether the rollout hasn't reached the tenant, or already has ([Mike Crowley](https://mikecrowley.us/2026/08/03/ca-baseline-scopes-enforcement-impact/)). The sign-in log scan now also checks, per policy, whether it's already been observed evaluating a sign-in against the Windows Azure AD Graph audience - if so, the finding is downgraded to an Info note instead of recommending a new policy.
 
 ### v1.17.1 - False Positive & Offline Bug Fixes (September 3, 2026)
 

@@ -197,6 +197,23 @@ export interface PolicySignInLogResult {
   windowStart: string;
   /** Hit the overall scan row cap - some recent sign-ins may not be reflected. */
   scanTruncated: boolean;
+  /**
+   * Empirical evidence that a policy is already being evaluated against the
+   * Windows Azure AD Graph ("baseline scopes") audience - keyed by policy ID,
+   * value is the most recent sign-in's createdDateTime where this policy
+   * appeared in appliedConditionalAccessPolicies for a sign-in whose resource
+   * was Windows Azure Active Directory. Reuses the same scanned rows as
+   * byPolicy, so this costs nothing extra.
+   *
+   * Why this exists: Microsoft's Low-Privilege Scope Enforcement rollout
+   * (MC1223829) is a *silent* tenant default once it lands - it writes no
+   * record to `advancedSettings.baselineScopes`, so that field reads
+   * identically (null) whether the rollout hasn't reached the tenant yet, or
+   * whether it has already completed and enforcement is live. The tenant
+   * setting alone cannot tell those two states apart; only observed sign-in
+   * evidence can. See https://mikecrowley.us/2026/08/03/ca-baseline-scopes-enforcement-impact/
+   */
+  baselineAudienceEvidence: Map<string, string>;
 }
 
 export interface AuthenticationStrengthPolicy {
@@ -629,8 +646,27 @@ const POLICY_SIGNIN_SELECT = [
   "ipAddress",
   "location",
   "clientAppUsed",
+  "resourceDisplayName",
   "appliedConditionalAccessPolicies",
 ].join(",");
+
+/**
+ * Entra's own display name for the Windows Azure AD Graph resource
+ * (00000002-0000-0000-c000-000000000000) - the audience the Low-Privilege
+ * Scope Enforcement ("baseline scopes") change re-routes low-privilege
+ * requests to. Matched case-insensitively against `resourceDisplayName`.
+ */
+const WINDOWS_AZURE_AD_RESOURCE_DISPLAY_NAME = "windows azure active directory";
+
+/** A policy actually evaluated the sign-in - not skipped as notApplied/notEnabled/unknown. */
+function policyWasEvaluated(result: string): boolean {
+  return (
+    result === "success" ||
+    result === "failure" ||
+    result === "reportOnlySuccess" ||
+    result === "reportOnlyFailure"
+  );
+}
 
 function formatSignInLocation(location: unknown): string | undefined {
   const loc = location as
@@ -678,6 +714,7 @@ export async function fetchPolicySignInMatches(
 
   const knownPolicyIds = new Set(policies.map((p) => p.id));
   const byPolicy = new Map<string, PolicySignInMatches>();
+  const baselineAudienceEvidence = new Map<string, string>();
   let scanTruncated = false;
   let rowsScanned = 0;
   let nextLink: string | undefined =
@@ -705,8 +742,27 @@ export async function fetchPolicySignInMatches(
       );
       if (!applied) continue;
 
+      const isBaselineAudience =
+        typeof row.resourceDisplayName === "string" &&
+        row.resourceDisplayName.trim().toLowerCase() ===
+          WINDOWS_AZURE_AD_RESOURCE_DISPLAY_NAME;
+
       for (const ap of applied) {
         if (!ap.id || !knownPolicyIds.has(ap.id)) continue;
+
+        // Evidence collection: regardless of match status, if this policy was
+        // actually evaluated (not notApplied/notEnabled) against a sign-in
+        // whose resource was Windows Azure AD Graph, that's proof the tenant
+        // is already routing baseline-scope requests through this policy -
+        // even if advancedSettings.baselineScopes still reads null/unset.
+        if (isBaselineAudience && policyWasEvaluated(ap.result)) {
+          const existing = baselineAudienceEvidence.get(ap.id);
+          const createdDateTime = row.createdDateTime as string;
+          if (!existing || createdDateTime > existing) {
+            baselineAudienceEvidence.set(ap.id, createdDateTime);
+          }
+        }
+
         const status: "blocked" | "wouldBlock" | null =
           ap.result === "failure"
             ? "blocked"
@@ -746,7 +802,7 @@ export async function fetchPolicySignInMatches(
     }
   }
 
-  return { byPolicy, windowStart, scanTruncated };
+  return { byPolicy, windowStart, scanTruncated, baselineAudienceEvidence };
 }
 
 /**
