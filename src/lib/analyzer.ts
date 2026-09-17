@@ -751,6 +751,19 @@ export function checkBaselineEnforcement(
   // If we get here: policy targets "All" apps and has exclusions, but tenant
   // baseline enforcement does not already cover the Windows Azure AD app -
   // recommend deploying a dedicated, separate policy for that audience.
+  //
+  // Make it explicit whether a sign-in log scan actually ran and found no
+  // evidence, versus the scan never running at all - otherwise this reads as
+  // "no evidence" either way, and the user can't tell whether the tenant
+  // setting is truly the last word here or just unverified.
+  const scanWasPerformed = context.policySignInMatches != null;
+  const scanTruncated = context.policySignInMatches?.scanTruncated ?? false;
+  const evidenceStatusNote = scanWasPerformed
+    ? scanTruncated
+      ? "A sign-in log scan ran but was truncated (time/row limits) before completing, so it could not confirm one way or the other whether baseline scopes are silently active for this policy."
+      : "A sign-in log scan ran for the selected window and found no evidence of this policy being evaluated against the Windows Azure Active Directory (Azure AD Graph) audience - so, as far as this scan can tell, baseline enforcement is NOT currently active for this policy."
+    : "No sign-in log scan was performed for this analysis, so it's unverified either way whether Microsoft's silent baseline-scope rollout (MC1223829) has reached this tenant - the tenant setting alone cannot confirm it, since that field stays null/unset even after the rollout silently activates.";
+
   findings.push({
     id: nextFindingId(),
     policyId: policy.id,
@@ -761,6 +774,7 @@ export function checkBaselineEnforcement(
     description:
       `This policy targets "All" resources but has ${excluded.length} excluded app(s). ` +
       `Tenant baseline enforcement does not currently cover the Windows Azure AD app (tenant setting: ${baselineScope ?? "unset/null"}). ` +
+      `${evidenceStatusNote} ` +
       `Once Microsoft's Low-Privilege Scope Enforcement change is rolled out, "All resources" policies with exclusions no longer automatically cover low-privilege scopes (User.Read, openid, profile, email, offline_access) for the Windows Azure AD (Azure AD Graph) audience - the excluded apps can bypass protection unless a dedicated policy covers it.`,
     recommendation:
       "Deploy a separate, dedicated Conditional Access policy scoped specifically to the Windows Azure AD (Azure AD Graph, 00000002-0000-0000-c000-000000000000) app - do not modify this 'All resources' policy. See the recommended baseline template 'GLOBAL - GRANT - MFA - WindowsAzureAD-BaselineScopes' in the Templates tab for a ready-to-deploy configuration.",
