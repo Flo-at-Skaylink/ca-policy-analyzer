@@ -638,6 +638,34 @@ const POLICY_SIGNIN_SCAN_ROW_CAP = 500;
 const POLICY_SIGNIN_PAGE_SIZE = 100;
 /** Cap on matches kept per policy - the UI only needs a representative sample. */
 const POLICY_SIGNIN_MATCHES_PER_POLICY_CAP = 25;
+/**
+ * Wall-clock budget for the whole scan and a per-request timeout, so a slow
+ * tenant (this endpoint's `appliedConditionalAccessPolicies` select is
+ * documented-expensive) can't leave the run stuck on this step indefinitely.
+ * Either limit hitting ends the scan early with `scanTruncated: true`.
+ */
+const POLICY_SIGNIN_SCAN_TIME_BUDGET_MS = 25_000;
+const POLICY_SIGNIN_REQUEST_TIMEOUT_MS = 15_000;
+
+/** Rejects if `promise` hasn't settled within `ms` - bounds a single Graph call. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`Request timed out after ${ms}ms`)),
+      ms
+    );
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
 
 const POLICY_SIGNIN_SELECT = [
   "id",
@@ -701,6 +729,15 @@ function describeFailureReason(
  * Scans recent sign-ins and attributes each to the Conditional Access
  * policies it matched, keeping only the ones a policy blocked (enabled) or
  * would have blocked (report-only). Requires `AuditLog.Read.All`.
+ *
+ * `appliedConditionalAccessPolicies` is a documented-expensive field to
+ * include in `$select` - Microsoft Graph evaluates every applicable policy
+ * per row to populate it, so this endpoint can be materially slower per page
+ * than a typical sign-in log query, especially in tenants with heavy sign-in
+ * volume. Two safeguards bound the wait so this step can never hang the run:
+ * a wall-clock time budget across the whole scan, and a per-request timeout
+ * so a single slow/stalled page can't block indefinitely. Either one hitting
+ * ends the scan early with whatever was collected and sets `scanTruncated`.
  */
 export async function fetchPolicySignInMatches(
   client: Client,
@@ -717,22 +754,32 @@ export async function fetchPolicySignInMatches(
   const baselineAudienceEvidence = new Map<string, string>();
   let scanTruncated = false;
   let rowsScanned = 0;
+  const scanStart = Date.now();
   let nextLink: string | undefined =
     `/auditLogs/signIns?$filter=${encodeURIComponent(
       `createdDateTime ge ${windowStart}`
     )}&$select=${POLICY_SIGNIN_SELECT}&$top=${POLICY_SIGNIN_PAGE_SIZE}`;
 
-  while (nextLink && rowsScanned < POLICY_SIGNIN_SCAN_ROW_CAP) {
+  while (
+    nextLink &&
+    rowsScanned < POLICY_SIGNIN_SCAN_ROW_CAP &&
+    Date.now() - scanStart < POLICY_SIGNIN_SCAN_TIME_BUDGET_MS
+  ) {
     let response;
     try {
-      response = await client
+      const request = client
         .api(nextLink)
         .version("beta")
         .header("Prefer", "include-unknown-enum-members")
         .get();
+      response = await withTimeout(request, POLICY_SIGNIN_REQUEST_TIMEOUT_MS);
     } catch {
+      // A single stalled/slow page or a real error - stop rather than hang
+      // or retry indefinitely; whatever was collected so far is still valid.
+      scanTruncated = true;
       break;
     }
+
 
     const rows: Array<Record<string, unknown>> = response?.value ?? [];
     for (const row of rows) {
@@ -798,6 +845,12 @@ export async function fetchPolicySignInMatches(
 
     nextLink = response?.["@odata.nextLink"];
     if (rowsScanned >= POLICY_SIGNIN_SCAN_ROW_CAP && nextLink) {
+      scanTruncated = true;
+    }
+    if (
+      nextLink &&
+      Date.now() - scanStart >= POLICY_SIGNIN_SCAN_TIME_BUDGET_MS
+    ) {
       scanTruncated = true;
     }
   }
