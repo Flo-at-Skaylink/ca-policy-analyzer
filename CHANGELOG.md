@@ -5,6 +5,19 @@ All notable changes to the CA Policy Analyzer will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.18.0] - 2026-09-16
+
+### Added
+
+- **Per-policy sign-in log matches on the Policies tab** - each policy card now has a collapsible "Sign-in log matches" section, below the existing Findings block, showing real sign-ins from the last 30 days that this specific policy blocked (enabled policies, `result: "failure"`) or would have blocked (report-only policies, `result: "reportOnlyFailure"`). Attribution comes from `appliedConditionalAccessPolicies` on each `/auditLogs/signIns` event, so a match is Entra's own recorded verdict for that policy, not a re-derived prediction.
+  - Table columns: User, Date/Time, Location, Client App, Status (Blocked / Would block), and Failure Reason (derived from `conditionsNotSatisfied` / enforced grant controls, with a raw-detail sub-line).
+  - Count badge on the section header: red "N blocked", amber "N would be blocked", or green "0 in last 30 days" when the policy has a clean scan.
+  - Falls back to a "not scanned" notice (matching the Missing Service Principals scan's degrade behavior) when the sign-in log scan hasn't been run - same `AuditLog.Read.All` / Entra ID P1 gate, same *Scan sign-in logs* toggle.
+  - Scan is capped (500 sign-in rows per run, 25 matches kept per policy) to bound request volume; a truncated scan or an over-cap policy says so in the UI rather than implying full coverage.
+  - New `fetchPolicySignInMatches()` in `src/lib/graph-client.ts`, new `PolicySignInMatch` / `PolicySignInMatches` / `PolicySignInLogResult` types, `TenantContext.policySignInMatches`.
+  - Findings display and logic are unchanged - this is purely an additional section beneath it.
+  - Design was validated against a static HTML mockup (`docs/mockups/sign-in-log-findings-mockup.html`) before implementation.
+
 ## [1.17.1] - 2026-09-03
 
 ### Fixed

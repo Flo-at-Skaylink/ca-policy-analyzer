@@ -108,6 +108,13 @@ This fixture intentionally includes edge cases that previously caused offline/li
 
 > Full version history lives in [CHANGELOG.md](CHANGELOG.md).
 
+### v1.18.0 - Per-Policy Sign-In Log Matches (September 16, 2026)
+
+- **New on the Policies tab: a collapsible "Sign-in log matches" section under each policy's Findings.** Shows real sign-ins from the last 30 days that this policy blocked, or would have blocked in report-only mode, attributed via `appliedConditionalAccessPolicies` on your own `/auditLogs/signIns` events - Entra's recorded verdict, not a prediction.
+- **Table shows User, Date/Time, Location, Client App, Status, and Failure Reason** for every match, with a count badge (red "N blocked", amber "N would be blocked", or green "0 in last 30 days").
+- **Uses the existing sign-in log scan toggle and permission gate** - no new consent prompt. When the scan hasn't been run, the section shows a "not scanned" notice instead.
+- **Scan is capped** (500 rows per run, 25 matches per policy) with the UI saying so when a cap is hit, rather than implying full coverage.
+
 ### v1.17.1 - False Positive & Offline Bug Fixes (September 3, 2026)
 
 - **Three false positives fixed** ([@dermo-blast](https://github.com/dermo-blast) report, issue #19) - country/region named locations no longer flagged as "untrusted" under "All trusted locations" (only IP-range locations can be marked trusted at all); device/app compliance requirements no longer flagged as blocking WHfB/Platform SSO setup when MFA is an accepted `OR` alternative; a grant-control `OR` spanning **both** device-trust and app-protection controls (e.g. compliant device OR app protection policy - Microsoft's MDM-or-MAM pattern for BYOD) is now recognized as equivalent-strength, not a weakest-link gap.
@@ -355,7 +362,7 @@ The app has nine tabs accessible after running an analysis:
 | Tab | What It Shows |
 |---|---|
 | **Dashboard** | **Zero Trust Scorecard** (Verify Explicitly / Use Least Privilege / Assume Breach — 15 weighted signals across 3 pillars), composite security posture score (0–100), severity breakdown, risk category distribution, and at-a-glance stats |
-| **Policies** | Every CA policy visualized as a flow card: Users → Conditions → Apps → Grant/Session Controls. Search, sort by **Most Findings / Name / State**, and expand any policy to see its findings inline |
+| **Policies** | Every CA policy visualized as a flow card: Users → Conditions → Apps → Grant/Session Controls. Search, sort by **Most Findings / Name / State**, and expand any policy to see its findings inline, plus a collapsible **Sign-in log matches** section showing real sign-ins the policy blocked or would have blocked in the last 30 days (when the sign-in log scan is on) |
 | **Findings** | All detected issues grouped by category and ranked by severity (Critical → Info) with affected policies and remediation guidance. Filter chips for All / Critical / High / Medium / Low / Info |
 | **Templates** | 42 best-practice policy templates compared against your tenant. **One-click load** of two persona-aligned Zero Trust baselines (Kenneth van Surksum 2025.10, Joey Verlinden Conditional Access Baseline 2026.6.1 including the full DCToolbox Config/ restore bundle) or compare against any public GitHub repo via URL / `owner/repo` shorthand |
 | **Baseline Gap** | Diff the live tenant against the loaded baseline grouped by Zero Trust persona — **Missing** / **Drift** / **Tenant-only** buckets, coverage score, and a **Download deployment bundle** button that ships a ZIP of criticality-ordered README + per-policy Graph-ready JSONs for direct import |
