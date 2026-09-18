@@ -635,10 +635,14 @@ export async function fetchUnregisteredSignInApps(
 /** Cap on total sign-in rows scanned per run - bounds request volume for tenants
  * with heavy sign-in traffic. Surfaced as `scanTruncated`. */
 const POLICY_SIGNIN_SCAN_ROW_CAP = 500;
-/** Larger than the unregistered-apps page size - fewer round trips against an
- * endpoint whose per-row cost (populating appliedConditionalAccessPolicies)
- * dwarfs its per-request latency, so bigger pages are a clear win here. */
-const POLICY_SIGNIN_PAGE_SIZE = 200;
+/** Reverted back to the original, known-good size. A larger page (200) was
+ * tried as a perf optimization, but `appliedConditionalAccessPolicies` is a
+ * documented-expensive field to populate per row, and a 200-row page of it
+ * can exceed the per-request timeout below before the first page even
+ * returns - silently producing a scan that looks like "zero matches
+ * everywhere" instead of "the request took too long". 100 rows reliably
+ * finishes within the timeout on tenants tested so far. */
+const POLICY_SIGNIN_PAGE_SIZE = 100;
 /** Cap on matches kept per policy - the UI only needs a representative sample. */
 const POLICY_SIGNIN_MATCHES_PER_POLICY_CAP = 25;
 /**
