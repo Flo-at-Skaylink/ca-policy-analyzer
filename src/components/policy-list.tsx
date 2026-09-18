@@ -233,7 +233,13 @@ function FindingsGrouped({ findings }: { findings: Finding[] }) {
 }
 
 function PolicySignInMatchesSection({ policyId, policyName, result }: { policyId: string; policyName: string; result?: PolicySignInLogResult }) {
-  const [open, setOpen] = useState(true);
+  // Default collapsed when there's nothing to see - most policies in a
+  // healthy tenant show "0 in last 30 days", and expanding all of them by
+  // default made cards taller than they needed to be. Policies that DID
+  // catch something (blocked/would-block matches) still open by default so
+  // the finding is visible without an extra click.
+  const hasAnyMatches = (result?.byPolicy.get(policyId)?.matches.length ?? 0) > 0;
+  const [open, setOpen] = useState(hasAnyMatches);
 
   // Sign-in log scan wasn't run for this analysis (no AuditLog.Read.All / P1,
   // or an offline export that predates this dataset).

@@ -1192,43 +1192,44 @@ export async function loadTenantContext(
   // The heaviest step, and the only one needing AuditLog.Read.All. Downstream
   // already treats an absent result as "not scanned".
   //
-  // These two scans hit different endpoints (signInEventsAppSummary vs.
-  // signIns) and share no data dependency, so they run concurrently rather
-  // than one after the other - on a tenant where each takes several seconds,
-  // this roughly halves the wall-clock time of this step. Progress is
-  // reported once, up front, since there's no meaningful "step 1 done, step
-  // 2 starting" boundary anymore when both are in flight together.
+  // Sequential, not concurrent - this WAS made concurrent via Promise.allSettled
+  // as a perf attempt, but every single Graph request from this client calls
+  // acquireTokenSilent through its authProvider (see createGraphClient) - there
+  // is no separate up-front token fetch. Firing both scans' paged requests at
+  // once meant dozens of concurrent silent token acquisitions racing each
+  // other; MSAL can reject overlapping silent calls in that pattern, and a
+  // rejection here is caught by fetchPolicySignInMatches's own try/catch and
+  // treated as "request failed, stop scanning" - which looks identical to
+  // "zero matches found" in the UI. Reverted to sequential to stop that
+  // regression; parallelizing safely would require pre-warming the token
+  // once before either scan starts, which isn't done today.
   let unregisteredSignInApps: UnregisteredSignInAppsResult | undefined;
   let policySignInMatches: PolicySignInLogResult | undefined;
   if (includeSignInLogs) {
     onProgress?.(RUN_STEPS.signInLogs);
-    onProgress?.(RUN_STEPS.signInPolicyMatches);
-    const [appsResult, matchesResult] = await Promise.allSettled([
-      fetchUnregisteredSignInApps(client, servicePrincipals),
-      fetchPolicySignInMatches(client, policies),
-    ]);
-
-    if (appsResult.status === "fulfilled") {
-      unregisteredSignInApps = appsResult.value;
-    } else {
+    try {
+      unregisteredSignInApps = await fetchUnregisteredSignInApps(
+        client,
+        servicePrincipals
+      );
+    } catch (e) {
       // Needs AuditLog.Read.All and Entra ID P1 - degrade, don't fail the run
       console.warn(
         "Could not scan sign-in logs for unregistered service principals - skipping that check.",
-        appsResult.reason
+        e
       );
     }
-
-    if (matchesResult.status === "fulfilled") {
-      policySignInMatches = matchesResult.value;
-    } else {
+    onProgress?.(RUN_STEPS.signInPolicyMatches);
+    try {
+      policySignInMatches = await fetchPolicySignInMatches(client, policies);
+    } catch (e) {
       // Needs AuditLog.Read.All - degrade, don't fail the run
       console.warn(
         "Could not scan sign-in logs for per-policy matches - skipping that check.",
-        matchesResult.reason
+        e
       );
     }
   }
-
 
   onProgress?.(RUN_STEPS.directoryObjects);
   const directoryObjects = await resolveDirectoryObjects(client, policies);
