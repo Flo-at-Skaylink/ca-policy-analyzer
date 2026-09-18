@@ -21,7 +21,6 @@
 
 The app runs **100% in your browser** — your data never leaves your machine. It connects directly to Microsoft Graph using your own credentials (delegated permissions).
 
-![New Conditional Access Policy Analyzer](docs/screenshots/CondtionalAccessAnalyzer.png)
 
 ### Offline Mode (No Direct Tenant Access)
 
@@ -109,6 +108,14 @@ This fixture intentionally includes edge cases that previously caused offline/li
 
 > Full version history lives in [CHANGELOG.md](CHANGELOG.md).
 
+### v1.18.0 - Per-Policy Sign-In Log Matches (September 16, 2026)
+
+- **New on the Policies tab: a collapsible "Sign-in log matches" section under each policy's Findings.** Shows real sign-ins from the last 30 days that this policy blocked, or would have blocked in report-only mode, attributed via `appliedConditionalAccessPolicies` on your own `/auditLogs/signIns` events - Entra's recorded verdict, not a prediction.
+- **Table shows User, Date/Time, Location, Client App, Status, and Failure Reason** for every match, with a count badge (red "N blocked", amber "N would be blocked", or green "0 in last 30 days").
+- **Uses the existing sign-in log scan toggle and permission gate** - no new consent prompt. When the scan hasn't been run, the section shows a "not scanned" notice instead.
+- **Scan is capped** (500 rows per run, 25 matches per policy) with the UI saying so when a cap is hit, rather than implying full coverage.
+- **Fixed: "Baseline Enforcement" no longer recommends a redundant policy when enforcement is already silently active.** Microsoft's Low-Privilege Scope Enforcement rollout (MC1223829) enables itself tenant-wide automatically and never records that it did, so `advancedSettings.baselineScopes` reading null/unset is ambiguous - it looks the same whether the rollout hasn't reached the tenant, or already has ([Mike Crowley](https://mikecrowley.us/2026/08/03/ca-baseline-scopes-enforcement-impact/)). The sign-in log scan now also checks, per policy, whether it's already been observed evaluating a sign-in against the Windows Azure AD Graph audience - if so, the finding is downgraded to an Info note instead of recommending a new policy.
+
 ### v1.17.1 - False Positive & Offline Bug Fixes (September 3, 2026)
 
 - **Three false positives fixed** ([@dermo-blast](https://github.com/dermo-blast) report, issue #19) - country/region named locations no longer flagged as "untrusted" under "All trusted locations" (only IP-range locations can be marked trusted at all); device/app compliance requirements no longer flagged as blocking WHfB/Platform SSO setup when MFA is an accepted `OR` alternative; a grant-control `OR` spanning **both** device-trust and app-protection controls (e.g. compliant device OR app protection policy - Microsoft's MDM-or-MAM pattern for BYOD) is now recognized as equivalent-strength, not a weakest-link gap.
@@ -116,7 +123,7 @@ This fixture intentionally includes edge cases that previously caused offline/li
 - **Offline import - missing file picker for signed-in users** (issue #23) - the Import Offline Export control only existed on the signed-out landing screen. A stale cached session (reused tab, prior sign-in) skipped straight to "Ready to Analyze," where there was no way to load a file at all. Added the offline-import control to that screen too.
 - **Offline export 404 - confirmed already fixed** (issue #22) - re-verified against the live site; the `<Link>`-based fix from v1.16.2 is working correctly.
 
-### v1.17.0 - Missing Service Principals (September 2, 2026)
+### v1.17.0 - Missing Service Principals (September 2, 2026) - *[@royklo](https://github.com/royklo), [PR #31](https://github.com/Jhope188/ca-policy-analyzer/pull/31)*
 
 - **New check: apps in your sign-in logs with no service principal.** Such an app isn't in the Conditional Access app picker, so it can be neither included nor excluded; only a policy targeting *All resources* reaches it. Discovery diffs `/beta/auditLogs/signInEventsAppSummary` against your service principals and shows the evidence from your own logs plus what Entra recorded in `appliedConditionalAccessPolicies` on that sign-in.
 - **Impact preview before you register anything** - which policies would hit the app once it exists, as will apply / may apply / will not apply, covering include/exclude by ID, the `Office365` suite, application filters on custom security attributes, client app types, user scoping and workload identities.
@@ -356,7 +363,7 @@ The app has nine tabs accessible after running an analysis:
 | Tab | What It Shows |
 |---|---|
 | **Dashboard** | **Zero Trust Scorecard** (Verify Explicitly / Use Least Privilege / Assume Breach — 15 weighted signals across 3 pillars), composite security posture score (0–100), severity breakdown, risk category distribution, and at-a-glance stats |
-| **Policies** | Every CA policy visualized as a flow card: Users → Conditions → Apps → Grant/Session Controls. Search, sort by **Most Findings / Name / State**, and expand any policy to see its findings inline |
+| **Policies** | Every CA policy visualized as a flow card: Users → Conditions → Apps → Grant/Session Controls. Search, sort by **Most Findings / Name / State**, and expand any policy to see its findings inline, plus a collapsible **Sign-in log matches** section showing real sign-ins the policy blocked or would have blocked in the last 30 days (when the sign-in log scan is on) |
 | **Findings** | All detected issues grouped by category and ranked by severity (Critical → Info) with affected policies and remediation guidance. Filter chips for All / Critical / High / Medium / Low / Info |
 | **Templates** | 42 best-practice policy templates compared against your tenant. **One-click load** of two persona-aligned Zero Trust baselines (Kenneth van Surksum 2025.10, Joey Verlinden Conditional Access Baseline 2026.6.1 including the full DCToolbox Config/ restore bundle) or compare against any public GitHub repo via URL / `owner/repo` shorthand |
 | **Baseline Gap** | Diff the live tenant against the loaded baseline grouped by Zero Trust persona — **Missing** / **Drift** / **Tenant-only** buckets, coverage score, and a **Download deployment bundle** button that ships a ZIP of criticality-ordered README + per-policy Graph-ready JSONs for direct import |

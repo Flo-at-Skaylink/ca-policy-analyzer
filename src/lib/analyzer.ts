@@ -712,9 +712,58 @@ export function checkBaselineEnforcement(
 
   if (isEnforcedForAzureAd) return findings; // tenant already enforces the Azure AD baseline audience
 
+  // The tenant setting is null/unset - but that state is ambiguous. Microsoft's
+  // Low-Privilege Scope Enforcement rollout (MC1223829) silently enables itself
+  // tenant-wide without ever writing a record to advancedSettings.baselineScopes,
+  // so "unset" reads identically whether the rollout hasn't reached this tenant
+  // yet, or it already has and enforcement is live. Before recommending a new
+  // policy, check for empirical sign-in log evidence that this policy is
+  // already being evaluated against the Windows Azure AD Graph audience - if
+  // so, the recommendation below is unnecessary.
+  // See: https://mikecrowley.us/2026/08/03/ca-baseline-scopes-enforcement-impact/
+  const evidenceLastSeen = context.policySignInMatches?.baselineAudienceEvidence?.get(
+    policy.id
+  );
+  if (evidenceLastSeen) {
+    findings.push({
+      id: nextFindingId(),
+      policyId: policy.id,
+      policyName: policy.displayName,
+      severity: "info",
+      category: "Baseline Enforcement",
+      title: "Baseline scope enforcement already active (detected via sign-in logs)",
+      description:
+        `This policy targets "All" resources with ${excluded.length} excluded app(s), and the tenant's ` +
+        `advancedSettings.baselineScopes reads unset/null. That field is ambiguous by design - Microsoft's ` +
+        `automatic Low-Privilege Scope Enforcement rollout (MC1223829) never writes a record when it enables ` +
+        `itself, so "unset" looks identical whether the rollout hasn't reached this tenant or already has. ` +
+        `Sign-in log evidence resolves the ambiguity here: this policy was observed evaluating a sign-in ` +
+        `against the Windows Azure Active Directory (Azure AD Graph) audience as recently as ${evidenceLastSeen} - ` +
+        `proof that baseline scopes are already being routed through Conditional Access for this policy. ` +
+        `No additional dedicated policy is needed for this audience.`,
+      recommendation:
+        "No action required for this policy's baseline coverage - the sign-in logs show it is already enforcing against the Windows Azure AD Graph audience. If you want to confirm going forward without relying on log sampling, deploy a report-only policy explicitly targeting Windows Azure Active Directory to make the behavior visible in the tenant setting.",
+      relatedIds: excluded,
+    });
+    return findings;
+  }
+
   // If we get here: policy targets "All" apps and has exclusions, but tenant
   // baseline enforcement does not already cover the Windows Azure AD app -
   // recommend deploying a dedicated, separate policy for that audience.
+  //
+  // Make it explicit whether a sign-in log scan actually ran and found no
+  // evidence, versus the scan never running at all - otherwise this reads as
+  // "no evidence" either way, and the user can't tell whether the tenant
+  // setting is truly the last word here or just unverified.
+  const scanWasPerformed = context.policySignInMatches != null;
+  const scanTruncated = context.policySignInMatches?.scanTruncated ?? false;
+  const evidenceStatusNote = scanWasPerformed
+    ? scanTruncated
+      ? "A sign-in log scan ran but was truncated (time/row limits) before completing, so it could not confirm one way or the other whether baseline scopes are silently active for this policy."
+      : "A sign-in log scan ran for the selected window and found no evidence of this policy being evaluated against the Windows Azure Active Directory (Azure AD Graph) audience - so, as far as this scan can tell, baseline enforcement is NOT currently active for this policy."
+    : "No sign-in log scan was performed for this analysis, so it's unverified either way whether Microsoft's silent baseline-scope rollout (MC1223829) has reached this tenant - the tenant setting alone cannot confirm it, since that field stays null/unset even after the rollout silently activates.";
+
   findings.push({
     id: nextFindingId(),
     policyId: policy.id,
@@ -725,6 +774,7 @@ export function checkBaselineEnforcement(
     description:
       `This policy targets "All" resources but has ${excluded.length} excluded app(s). ` +
       `Tenant baseline enforcement does not currently cover the Windows Azure AD app (tenant setting: ${baselineScope ?? "unset/null"}). ` +
+      `${evidenceStatusNote} ` +
       `Once Microsoft's Low-Privilege Scope Enforcement change is rolled out, "All resources" policies with exclusions no longer automatically cover low-privilege scopes (User.Read, openid, profile, email, offline_access) for the Windows Azure AD (Azure AD Graph) audience - the excluded apps can bypass protection unless a dedicated policy covers it.`,
     recommendation:
       "Deploy a separate, dedicated Conditional Access policy scoped specifically to the Windows Azure AD (Azure AD Graph, 00000002-0000-0000-c000-000000000000) app - do not modify this 'All resources' policy. See the recommended baseline template 'GLOBAL - GRANT - MFA - WindowsAzureAD-BaselineScopes' in the Templates tab for a ready-to-deploy configuration.",

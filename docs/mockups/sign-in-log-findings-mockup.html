@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8" />
+<title>Mockup - Per-Policy Sign-in Log Matches</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #030712; /* gray-950 */
+    color: #f3f4f6; /* gray-100 */
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    padding: 32px 16px 80px;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .subtitle { color: #9ca3af; font-size: 13px; margin-bottom: 28px; }
+  .note {
+    background: rgba(59,130,246,0.08);
+    border: 1px solid rgba(59,130,246,0.3);
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 12.5px;
+    color: #93c5fd;
+    margin-bottom: 28px;
+    line-height: 1.5;
+  }
+  .card {
+    border: 1px solid #1f2937; /* gray-800 */
+    background: #111827; /* gray-900 */
+    border-radius: 14px;
+    margin-bottom: 18px;
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 18px 20px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    cursor: pointer;
+  }
+  .chevron {
+    color: #6b7280;
+    margin-top: 3px;
+    transition: transform .15s ease;
+    flex-shrink: 0;
+  }
+  .card.open .chevron { transform: rotate(90deg); }
+  .header-main { flex: 1; min-width: 0; }
+  .badges { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+  .badge {
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    padding: 3px 8px;
+    border-radius: 6px;
+  }
+  .badge-report { background: rgba(245,158,11,0.12); color: #f59e0b; }
+  .badge-enabled { background: rgba(34,197,94,0.12); color: #4ade80; }
+  .badge-disabled { background: rgba(107,114,128,0.2); color: #9ca3af; }
+  .policy-name { font-size: 15px; font-weight: 600; color: #f9fafb; }
+  .flow-line {
+    font-size: 12.5px;
+    color: #9ca3af;
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .flow-line .arrow { color: #4b5563; }
+  .findings-count {
+    font-size: 12px;
+    color: #f59e0b;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+    margin-top: 2px;
+  }
+  .card-body {
+    display: none;
+    padding: 0 20px 20px;
+    border-top: 1px solid #1f2937;
+  }
+  .card.open .card-body { display: block; }
+  .grid5 {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 20px;
+    padding: 18px 0 6px;
+  }
+  @media (max-width: 760px) { .grid5 { grid-template-columns: repeat(2, 1fr); } }
+  .field-label {
+    font-size: 11px;
+    color: #6b7280;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-bottom: 6px;
+  }
+  .field-value { font-size: 13px; color: #e5e7eb; line-height: 1.5; }
+  .field-value.muted { color: #6b7280; }
+
+  /* Findings section (collapsible, same pattern as sign-in log matches) */
+  .findings-section {
+    margin-top: 18px;
+  }
+  .findings-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: #1f2937;
+    border: 1px solid #374151;
+  }
+  .findings-toggle:hover { background: #26313f; }
+  .findings-toggle-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #e5e7eb;
+  }
+  .findings-count {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+  .findings-count.has-findings { background: rgba(245,158,11,0.15); color: #fbbf24; }
+  .findings-count.clean { background: rgba(74,222,128,0.12); color: #4ade80; }
+  .findings-chevron { color: #9ca3af; transition: transform .15s ease; }
+  .findings-section.open .findings-chevron { transform: rotate(90deg); }
+  .findings-body { display: none; margin-top: 10px; padding: 2px 2px 4px; }
+  .findings-section.open .findings-body { display: block; }
+
+  /* Sign-in log matches section */
+  .siglog-section {
+    margin-top: 8px;
+    border-top: 1px solid #1f2937;
+    padding-top: 16px;
+  }
+  .siglog-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: #1f2937;
+    border: 1px solid #374151;
+  }
+  .siglog-toggle:hover { background: #26313f; }
+  .siglog-toggle-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #e5e7eb;
+  }
+  .siglog-count {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+  .siglog-count.blocked { background: rgba(239,68,68,0.15); color: #f87171; }
+  .siglog-count.would-block { background: rgba(245,158,11,0.15); color: #fbbf24; }
+  .siglog-chevron { color: #9ca3af; transition: transform .15s ease; }
+  .siglog-section.open .siglog-chevron { transform: rotate(90deg); }
+  .siglog-body { display: none; margin-top: 10px; }
+  .siglog-section.open .siglog-body { display: block; }
+
+  .siglog-summary-line {
+    font-size: 12px;
+    color: #9ca3af;
+    padding: 2px 2px 10px;
+    line-height: 1.5;
+  }
+  .siglog-summary-line strong { color: #d1d5db; }
+
+  table.siglog-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+  }
+  table.siglog-table thead th {
+    text-align: left;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    color: #6b7280;
+    font-weight: 600;
+    padding: 6px 10px;
+    border-bottom: 1px solid #1f2937;
+  }
+  table.siglog-table tbody tr {
+    border-bottom: 1px solid #1f2937;
+  }
+  table.siglog-table tbody tr:hover { background: #1a2230; }
+  table.siglog-table td {
+    padding: 8px 10px;
+    color: #d1d5db;
+    vertical-align: top;
+  }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; color: #9ca3af; }
+  .status-pill {
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 6px;
+    display: inline-block;
+    white-space: nowrap;
+  }
+  .status-blocked { background: rgba(239,68,68,0.15); color: #f87171; }
+  .status-wouldblock { background: rgba(245,158,11,0.15); color: #fbbf24; }
+  .status-notapplied { background: rgba(107,114,128,0.2); color: #9ca3af; }
+  .fail-reason { color: #f3f4f6; }
+  .fail-reason .sub { display: block; color: #6b7280; font-size: 11px; margin-top: 2px; }
+  .location-cell { display: flex; align-items: center; gap: 5px; }
+  .siglog-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 2px 2px;
+    font-size: 11.5px;
+    color: #6b7280;
+  }
+  .siglog-footer a { color: #60a5fa; text-decoration: none; }
+  .siglog-footer a:hover { text-decoration: underline; }
+  .empty-siglog {
+    font-size: 12.5px;
+    color: #6b7280;
+    padding: 14px 2px;
+    text-align: center;
+    font-style: italic;
+  }
+  .unavailable-siglog {
+    font-size: 12px;
+    color: #6b7280;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: #1f2937;
+    border: 1px dashed #374151;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Mockup - Sign-in log matches per policy (Policies tab)</h1>
+  <div class="subtitle">Static, non-interactive HTML preview for review. No build/deploy involved.</div>
+
+  <div class="note">
+    <strong>Concept:</strong> when the sign-in log scan is on and completes, each policy card gets a new collapsible
+    "Sign-in log matches" row. It surfaces real sign-ins from the last 30 days where this specific policy
+    <strong>blocked</strong> access, or - for report-only policies - <strong>would have blocked</strong> access.
+    Expanding shows username, timestamp, location, client app, and the failure reason straight from
+    <code>appliedConditionalAccessPolicies</code> / <code>signInEventTypes</code> on the sign-in event.
+  </div>
+
+  <!-- ============ CARD 1: Report-only policy WITH matches (matches your screenshot) ============ -->
+  <div class="card open" id="card1">
+    <div class="card-header" onclick="toggleCard('card1')">
+      <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      <div class="header-main">
+        <div class="badges">
+          <span class="badge badge-report">Report-only</span>
+          <span class="policy-name">IAC - GLOBAL - SESSION - Windows - TokenProtection</span>
+        </div>
+        <div class="flow-line">
+          All users (2 exclusions) <span class="arrow">&rarr;</span> Azure Virtual Desktop, Windows Cloud Login, Windows 365, +4 more
+        </div>
+      </div>
+      <div class="findings-count">
+        &#9888; 4 findings
+      </div>
+    </div>
+
+    <div class="card-body">
+      <div class="grid5">
+        <div>
+          <div class="field-label">Users</div>
+          <div class="field-value">All users (2 exclusions)</div>
+        </div>
+        <div>
+          <div class="field-label">Cloud Apps</div>
+          <div class="field-value">Azure Virtual Desktop, Windows Cloud Login, Windows 365, Office 365 SharePoint Online, Office 365 Exchange Online, Microsoft Teams Services</div>
+        </div>
+        <div>
+          <div class="field-label">Conditions</div>
+          <div class="field-value">Platforms: windows<br/>Client apps: mobileAppsAndDesktopClients<br/>Device filter: device.systemLabels -contains "CloudPC" -and device.trustType -eq "AzureAD"</div>
+        </div>
+        <div>
+          <div class="field-label">Grant Controls</div>
+          <div class="field-value muted">No grant controls</div>
+        </div>
+        <div>
+          <div class="field-label">Session Controls</div>
+          <div class="field-value muted">No session controls</div>
+        </div>
+      </div>
+
+      <div class="findings-section open" id="findings1">
+        <div class="findings-toggle" onclick="toggleFindings('findings1', event)">
+          <div class="findings-toggle-left">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Findings for this policy
+            <span class="findings-count has-findings">4</span>
+          </div>
+          <svg class="findings-chevron" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+        <div class="findings-body">
+          <div style="font-size:13px;"><span style="color:#f59e0b; font-weight:600;">High</span> &nbsp; (2)</div>
+          <div style="margin-top:4px; font-size:13px;"><span style="color:#60a5fa; font-weight:600;">Info</span> &nbsp; (2)</div>
+        </div>
+      </div>
+
+      <!-- ===== NEW: Sign-in log matches ===== -->
+      <div class="siglog-section open" id="siglog1">
+        <div class="siglog-toggle" onclick="toggleSiglog('siglog1', event)">
+          <div class="siglog-toggle-left">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
+            Sign-in log matches
+            <span class="siglog-count would-block">7 would be blocked</span>
+          </div>
+          <svg class="siglog-chevron" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+
+        <div class="siglog-body">
+          <div class="siglog-summary-line">
+            Last 30 days &middot; <strong>7</strong> sign-ins matched this policy's conditions and would have been blocked if enforced &middot; <strong>0</strong> already blocked (report-only mode never blocks live traffic)
+          </div>
+
+          <table class="siglog-table">
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Date / Time</th>
+                <th>Location</th>
+                <th>Client App</th>
+                <th>Status</th>
+                <th>Failure Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>alex.chen@conditionalaccess.tech</td>
+                <td class="mono">2026-09-15 14:22 UTC</td>
+                <td><div class="location-cell">&#128205; Chicago, US</div></td>
+                <td>Windows App (Cloud PC)</td>
+                <td><span class="status-pill status-wouldblock">Would block</span></td>
+                <td class="fail-reason">Device trust type did not match
+                  <span class="sub">device.trustType was "Hybrid Azure AD joined", policy requires "AzureAD"</span>
+                </td>
+              </tr>
+              <tr>
+                <td>priya.natarajan@conditionalaccess.tech</td>
+                <td class="mono">2026-09-14 09:07 UTC</td>
+                <td><div class="location-cell">&#128205; Toronto, CA</div></td>
+                <td>Remote Desktop</td>
+                <td><span class="status-pill status-wouldblock">Would block</span></td>
+                <td class="fail-reason">Token protection not satisfied
+                  <span class="sub">Client did not present a bound (proof-of-possession) token</span>
+                </td>
+              </tr>
+              <tr>
+                <td>sam.okafor@conditionalaccess.tech</td>
+                <td class="mono">2026-09-13 22:41 UTC</td>
+                <td><div class="location-cell">&#128205; Austin, US</div></td>
+                <td>Windows App (Cloud PC)</td>
+                <td><span class="status-pill status-wouldblock">Would block</span></td>
+                <td class="fail-reason">Token protection not satisfied
+                  <span class="sub">Client did not present a bound (proof-of-possession) token</span>
+                </td>
+              </tr>
+              <tr>
+                <td>maria.gonzales@conditionalaccess.tech</td>
+                <td class="mono">2026-09-12 16:58 UTC</td>
+                <td><div class="location-cell">&#128205; Miami, US</div></td>
+                <td>Windows 365</td>
+                <td><span class="status-pill status-wouldblock">Would block</span></td>
+                <td class="fail-reason">Device filter did not match
+                  <span class="sub">device.systemLabels missing "CloudPC" label</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="siglog-footer">
+            <span>Showing 4 of 7 matches</span>
+            <a href="#">View all 7 in Entra sign-in logs &rarr;</a>
+          </div>
+        </div>
+      </div>
+      <!-- ===== end sign-in log matches ===== -->
+
+      <div style="margin-top:14px; font-size:11px; color:#4b5563;">ID: 51fc91d7-914e-4696-b5b0-20116a53d80b</div>
+    </div>
+  </div>
+
+  <!-- ============ CARD 2: Enabled block policy WITH a real blocked sign-in ============ -->
+  <div class="card open" id="card2">
+    <div class="card-header" onclick="toggleCard('card2')">
+      <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      <div class="header-main">
+        <div class="badges">
+          <span class="badge badge-enabled">Enabled</span>
+          <span class="policy-name">IAC - GLOBAL - BLOCK - Device Code Auth Flow</span>
+        </div>
+        <div class="flow-line">
+          All users (1 exclusion) <span class="arrow">&rarr;</span> All resources <span class="arrow">&rarr;</span> Block access
+        </div>
+      </div>
+      <div class="findings-count" style="color:#4ade80;">
+        &#10003; No findings
+      </div>
+    </div>
+
+    <div class="card-body">
+      <div class="grid5">
+        <div>
+          <div class="field-label">Users</div>
+          <div class="field-value">All users (1 exclusion)</div>
+        </div>
+        <div>
+          <div class="field-label">Cloud Apps</div>
+          <div class="field-value">All resources</div>
+        </div>
+        <div>
+          <div class="field-label">Conditions</div>
+          <div class="field-value">Authentication flows: Device code flow</div>
+        </div>
+        <div>
+          <div class="field-label">Grant Controls</div>
+          <div class="field-value" style="color:#f87171;">Block access</div>
+        </div>
+        <div>
+          <div class="field-label">Session Controls</div>
+          <div class="field-value muted">No session controls</div>
+        </div>
+      </div>
+
+      <div class="findings-section" id="findings2">
+        <div class="findings-toggle" onclick="toggleFindings('findings2', event)">
+          <div class="findings-toggle-left">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            Findings for this policy
+            <span class="findings-count clean">0</span>
+          </div>
+          <svg class="findings-chevron" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+        <div class="findings-body">
+          <div style="font-size:13px; color:#4ade80;">&#10003; No findings for this policy</div>
+        </div>
+      </div>
+
+      <div class="siglog-section open" id="siglog2" style="margin-top:16px;">
+        <div class="siglog-toggle" onclick="toggleSiglog('siglog2', event)">
+          <div class="siglog-toggle-left">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
+            Sign-in log matches
+            <span class="siglog-count blocked">2 blocked</span>
+          </div>
+          <svg class="siglog-chevron" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+
+        <div class="siglog-body">
+          <div class="siglog-summary-line">
+            Last 30 days &middot; <strong>2</strong> sign-ins were blocked by this policy &middot; matched via <span class="mono">appliedConditionalAccessPolicies[].enforcedGrantControls</span>
+          </div>
+
+          <table class="siglog-table">
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Date / Time</th>
+                <th>Location</th>
+                <th>Client App</th>
+                <th>Status</th>
+                <th>Failure Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>unknown-user@conditionalaccess.tech</td>
+                <td class="mono">2026-09-10 03:14 UTC</td>
+                <td><div class="location-cell">&#128205; Hanoi, VN</div></td>
+                <td>Device Code Flow</td>
+                <td><span class="status-pill status-blocked">Blocked</span></td>
+                <td class="fail-reason">Blocked by Conditional Access
+                  <span class="sub">Policy explicitly blocks the device code authentication flow</span>
+                </td>
+              </tr>
+              <tr>
+                <td>svc-automation@conditionalaccess.tech</td>
+                <td class="mono">2026-09-04 11:02 UTC</td>
+                <td><div class="location-cell">&#128205; Amsterdam, NL</div></td>
+                <td>Device Code Flow</td>
+                <td><span class="status-pill status-blocked">Blocked</span></td>
+                <td class="fail-reason">Blocked by Conditional Access
+                  <span class="sub">Policy explicitly blocks the device code authentication flow</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="siglog-footer">
+            <span>Showing 2 of 2 matches</span>
+            <a href="#">View all in Entra sign-in logs &rarr;</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ CARD 3: Policy with clean logs (no matches at all) ============ -->
+  <div class="card open" id="card3">
+    <div class="card-header" onclick="toggleCard('card3')">
+      <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      <div class="header-main">
+        <div class="badges">
+          <span class="badge badge-enabled">Enabled</span>
+          <span class="policy-name">IAC - GLOBAL - GRANT - MFA - All Users</span>
+        </div>
+        <div class="flow-line">
+          All users (2 exclusions) <span class="arrow">&rarr;</span> All resources <span class="arrow">&rarr;</span> Require MFA
+        </div>
+      </div>
+      <div class="findings-count" style="color:#4ade80;">
+        &#10003; No findings
+      </div>
+    </div>
+
+    <div class="card-body">
+      <div class="grid5">
+        <div>
+          <div class="field-label">Users</div>
+          <div class="field-value">All users (2 exclusions)</div>
+        </div>
+        <div>
+          <div class="field-label">Cloud Apps</div>
+          <div class="field-value">All resources</div>
+        </div>
+        <div>
+          <div class="field-label">Conditions</div>
+          <div class="field-value muted">None</div>
+        </div>
+        <div>
+          <div class="field-label">Grant Controls</div>
+          <div class="field-value">Require multifactor authentication</div>
+        </div>
+        <div>
+          <div class="field-label">Session Controls</div>
+          <div class="field-value muted">No session controls</div>
+        </div>
+      </div>
+
+      <div class="findings-section" id="findings3">
+        <div class="findings-toggle" onclick="toggleFindings('findings3', event)">
+          <div class="findings-toggle-left">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            Findings for this policy
+            <span class="findings-count clean">0</span>
+          </div>
+          <svg class="findings-chevron" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+        <div class="findings-body">
+          <div style="font-size:13px; color:#4ade80;">&#10003; No findings for this policy</div>
+        </div>
+      </div>
+
+      <div class="siglog-section" id="siglog3" style="margin-top:16px;">
+        <div class="siglog-toggle" onclick="toggleSiglog('siglog3', event)">
+          <div class="siglog-toggle-left">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
+            Sign-in log matches
+            <span class="siglog-count" style="background: rgba(74,222,128,0.12); color:#4ade80;">0 in last 30 days</span>
+          </div>
+          <svg class="siglog-chevron" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+        <div class="siglog-body">
+          <div class="empty-siglog">No blocked or report-only-flagged sign-ins found for this policy in the last 30 days.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ CARD 4: Sign-in scan not run ============ -->
+  <div class="card open" id="card4">
+    <div class="card-header" onclick="toggleCard('card4')">
+      <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      <div class="header-main">
+        <div class="badges">
+          <span class="badge badge-disabled">Disabled</span>
+          <span class="policy-name">IAC - GLOBAL - BLOCK - Legacy Authentication</span>
+        </div>
+        <div class="flow-line">
+          All users <span class="arrow">&rarr;</span> All resources <span class="arrow">&rarr;</span> Block access
+        </div>
+      </div>
+      <div class="findings-count">
+        &#9888; 1 finding
+      </div>
+    </div>
+
+    <div class="card-body">
+      <div class="grid5">
+        <div>
+          <div class="field-label">Users</div>
+          <div class="field-value">All users</div>
+        </div>
+        <div>
+          <div class="field-label">Cloud Apps</div>
+          <div class="field-value">All resources</div>
+        </div>
+        <div>
+          <div class="field-label">Conditions</div>
+          <div class="field-value">Client apps: exchangeActiveSync, other</div>
+        </div>
+        <div>
+          <div class="field-label">Grant Controls</div>
+          <div class="field-value" style="color:#f87171;">Block access</div>
+        </div>
+        <div>
+          <div class="field-label">Session Controls</div>
+          <div class="field-value muted">No session controls</div>
+        </div>
+      </div>
+
+      <div class="findings-section open" id="findings4">
+        <div class="findings-toggle" onclick="toggleFindings('findings4', event)">
+          <div class="findings-toggle-left">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Findings for this policy
+            <span class="findings-count has-findings">1</span>
+          </div>
+          <svg class="findings-chevron" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+        <div class="findings-body">
+          <div style="font-size:13px;"><span style="color:#f59e0b; font-weight:600;">High</span> &nbsp; (1)</div>
+        </div>
+      </div>
+
+      <div class="siglog-section" style="margin-top:16px; border-top:1px solid #1f2937; padding-top:16px;">
+        <div class="unavailable-siglog">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Sign-in log matches not scanned - turn on <strong>Scan sign-in logs</strong> and re-run the analysis to see this.
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  function toggleCard(id) {
+    document.getElementById(id).classList.toggle('open');
+  }
+  function toggleSiglog(id, evt) {
+    evt.stopPropagation();
+    document.getElementById(id).classList.toggle('open');
+  }
+  function toggleFindings(id, evt) {
+    evt.stopPropagation();
+    document.getElementById(id).classList.toggle('open');
+  }
+</script>
+</body>
+</html>

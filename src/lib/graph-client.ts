@@ -166,6 +166,56 @@ export interface UnregisteredSignInAppsResult {
   windowStart: string;
 }
 
+/**
+ * A single sign-in event attributed to one policy via
+ * `appliedConditionalAccessPolicies`. `status` reflects Entra's own verdict
+ * for that policy on that event - "blocked" for an enabled policy that denied
+ * access, "wouldBlock" for a report-only policy that would have.
+ */
+export interface PolicySignInMatch {
+  id: string;
+  createdDateTime: string;
+  userPrincipalName?: string;
+  ipAddress?: string;
+  location?: string;
+  clientAppUsed?: string;
+  status: "blocked" | "wouldBlock";
+  /** Human-readable reason derived from conditionsNotSatisfied / grant controls */
+  failureReason?: string;
+  failureDetail?: string;
+}
+
+export interface PolicySignInMatches {
+  matches: PolicySignInMatch[];
+  /** More matches exist for this policy than we kept (capped per policy). */
+  truncated: boolean;
+}
+
+export interface PolicySignInLogResult {
+  /** Keyed by Conditional Access policy ID */
+  byPolicy: Map<string, PolicySignInMatches>;
+  windowStart: string;
+  /** Hit the overall scan row cap - some recent sign-ins may not be reflected. */
+  scanTruncated: boolean;
+  /**
+   * Empirical evidence that a policy is already being evaluated against the
+   * Windows Azure AD Graph ("baseline scopes") audience - keyed by policy ID,
+   * value is the most recent sign-in's createdDateTime where this policy
+   * appeared in appliedConditionalAccessPolicies for a sign-in whose resource
+   * was Windows Azure Active Directory. Reuses the same scanned rows as
+   * byPolicy, so this costs nothing extra.
+   *
+   * Why this exists: Microsoft's Low-Privilege Scope Enforcement rollout
+   * (MC1223829) is a *silent* tenant default once it lands - it writes no
+   * record to `advancedSettings.baselineScopes`, so that field reads
+   * identically (null) whether the rollout hasn't reached the tenant yet, or
+   * whether it has already completed and enforcement is live. The tenant
+   * setting alone cannot tell those two states apart; only observed sign-in
+   * evidence can. See https://mikecrowley.us/2026/08/03/ca-baseline-scopes-enforcement-impact/
+   */
+  baselineAudienceEvidence: Map<string, string>;
+}
+
 export interface AuthenticationStrengthPolicy {
   id: string;
   displayName: string;
@@ -213,6 +263,9 @@ export interface TenantContext {
   /** Undefined when the scan was skipped - no AuditLog.Read.All, no P1, or an
    * offline export that predates this dataset. */
   unregisteredSignInApps?: UnregisteredSignInAppsResult;
+  /** Per-policy sign-in log matches (blocked / would-block). Undefined when
+   * the sign-in log scan was skipped, same conditions as unregisteredSignInApps. */
+  policySignInMatches?: PolicySignInLogResult;
   /**
    * Tenant-wide Conditional Access settings (identity/conditionalAccess/settings).
    * Null when the tenant has no advancedSettings saved, or when the fetch
@@ -579,6 +632,239 @@ export async function fetchUnregisteredSignInApps(
   };
 }
 
+/** Cap on total sign-in rows scanned per run - bounds request volume for tenants
+ * with heavy sign-in traffic. Surfaced as `scanTruncated`. */
+const POLICY_SIGNIN_SCAN_ROW_CAP = 500;
+/** Larger than the unregistered-apps page size - fewer round trips against an
+ * endpoint whose per-row cost (populating appliedConditionalAccessPolicies)
+ * dwarfs its per-request latency, so bigger pages are a clear win here. */
+const POLICY_SIGNIN_PAGE_SIZE = 200;
+/** Cap on matches kept per policy - the UI only needs a representative sample. */
+const POLICY_SIGNIN_MATCHES_PER_POLICY_CAP = 25;
+/**
+ * Wall-clock budget for the whole scan and a per-request timeout, so a slow
+ * tenant (this endpoint's `appliedConditionalAccessPolicies` select is
+ * documented-expensive) can't leave the run stuck on this step indefinitely.
+ * Either limit hitting ends the scan early with `scanTruncated: true`.
+ */
+const POLICY_SIGNIN_SCAN_TIME_BUDGET_MS = 25_000;
+const POLICY_SIGNIN_REQUEST_TIMEOUT_MS = 15_000;
+
+/** Rejects if `promise` hasn't settled within `ms` - bounds a single Graph call. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`Request timed out after ${ms}ms`)),
+      ms
+    );
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
+
+const POLICY_SIGNIN_SELECT = [
+  "id",
+  "createdDateTime",
+  "userPrincipalName",
+  "ipAddress",
+  "location",
+  "clientAppUsed",
+  "resourceDisplayName",
+  "appliedConditionalAccessPolicies",
+].join(",");
+
+/**
+ * Entra's own display name for the Windows Azure AD Graph resource
+ * (00000002-0000-0000-c000-000000000000) - the audience the Low-Privilege
+ * Scope Enforcement ("baseline scopes") change re-routes low-privilege
+ * requests to. Matched case-insensitively against `resourceDisplayName`.
+ */
+const WINDOWS_AZURE_AD_RESOURCE_DISPLAY_NAME = "windows azure active directory";
+
+/** A policy actually evaluated the sign-in - not skipped as notApplied/notEnabled/unknown. */
+function policyWasEvaluated(result: string): boolean {
+  return (
+    result === "success" ||
+    result === "failure" ||
+    result === "reportOnlySuccess" ||
+    result === "reportOnlyFailure"
+  );
+}
+
+function formatSignInLocation(location: unknown): string | undefined {
+  const loc = location as
+    | { city?: string; state?: string; countryOrRegion?: string }
+    | undefined;
+  if (!loc) return undefined;
+  const parts = [loc.city, loc.state, loc.countryOrRegion].filter(Boolean);
+  return parts.length > 0 ? parts.join(", ") : undefined;
+}
+
+/** Best-effort friendly reason from the enum fields Entra records. */
+function describeFailureReason(
+  applied: AppliedCaPolicy
+): { reason?: string; detail?: string } {
+  if (applied.conditionsNotSatisfied) {
+    const first = applied.conditionsNotSatisfied.split(",")[0]?.trim();
+    return {
+      reason: first ? `${first} condition not satisfied` : undefined,
+      detail: `conditionsNotSatisfied: ${applied.conditionsNotSatisfied}`,
+    };
+  }
+  if (applied.enforcedGrantControls?.length) {
+    return {
+      reason: "Blocked by Conditional Access",
+      detail: `Enforced grant controls: ${applied.enforcedGrantControls.join(", ")}`,
+    };
+  }
+  return {};
+}
+
+/**
+ * Scans recent sign-ins and attributes each to the Conditional Access
+ * policies it matched, keeping only the ones a policy blocked (enabled) or
+ * would have blocked (report-only). Requires `AuditLog.Read.All`.
+ *
+ * `appliedConditionalAccessPolicies` is a documented-expensive field to
+ * include in `$select` - Microsoft Graph evaluates every applicable policy
+ * per row to populate it, so this endpoint can be materially slower per page
+ * than a typical sign-in log query, especially in tenants with heavy sign-in
+ * volume. Two safeguards bound the wait so this step can never hang the run:
+ * a wall-clock time budget across the whole scan, and a per-request timeout
+ * so a single slow/stalled page can't block indefinitely. Either one hitting
+ * ends the scan early with whatever was collected and sets `scanTruncated`.
+ */
+export async function fetchPolicySignInMatches(
+  client: Client,
+  policies: ConditionalAccessPolicy[]
+): Promise<PolicySignInLogResult> {
+  const windowStart = new Date(
+    Date.now() - DISCOVERY_WINDOW_DAYS * 24 * 60 * 60 * 1000
+  )
+    .toISOString()
+    .replace(/\.\d{3}Z$/, ".000Z");
+
+  const knownPolicyIds = new Set(policies.map((p) => p.id));
+  const byPolicy = new Map<string, PolicySignInMatches>();
+  const baselineAudienceEvidence = new Map<string, string>();
+  let scanTruncated = false;
+  let rowsScanned = 0;
+  const scanStart = Date.now();
+  let nextLink: string | undefined =
+    `/auditLogs/signIns?$filter=${encodeURIComponent(
+      `createdDateTime ge ${windowStart}`
+    )}&$select=${POLICY_SIGNIN_SELECT}&$top=${POLICY_SIGNIN_PAGE_SIZE}`;
+
+  while (
+    nextLink &&
+    rowsScanned < POLICY_SIGNIN_SCAN_ROW_CAP &&
+    Date.now() - scanStart < POLICY_SIGNIN_SCAN_TIME_BUDGET_MS
+  ) {
+    let response;
+    try {
+      const request = client
+        .api(nextLink)
+        .version("beta")
+        .header("Prefer", "include-unknown-enum-members")
+        .get();
+      response = await withTimeout(request, POLICY_SIGNIN_REQUEST_TIMEOUT_MS);
+    } catch (error) {
+      // A single stalled/slow page or a real error - stop rather than hang
+      // or retry indefinitely; whatever was collected so far is still valid.
+      // Logged (not swallowed) so a bad request (e.g. an unsupported $filter
+      // clause returning 400) is visible in the console instead of silently
+      // producing a scan that looks like "zero matches everywhere".
+      console.warn("[fetchPolicySignInMatches] request failed:", error);
+      scanTruncated = true;
+      break;
+    }
+
+
+    const rows: Array<Record<string, unknown>> = response?.value ?? [];
+    for (const row of rows) {
+      rowsScanned++;
+      const applied = normalizeAppliedPolicies(
+        row.appliedConditionalAccessPolicies
+      );
+      if (!applied) continue;
+
+      const isBaselineAudience =
+        typeof row.resourceDisplayName === "string" &&
+        row.resourceDisplayName.trim().toLowerCase() ===
+          WINDOWS_AZURE_AD_RESOURCE_DISPLAY_NAME;
+
+      for (const ap of applied) {
+        if (!ap.id || !knownPolicyIds.has(ap.id)) continue;
+
+        // Evidence collection: regardless of match status, if this policy was
+        // actually evaluated (not notApplied/notEnabled) against a sign-in
+        // whose resource was Windows Azure AD Graph, that's proof the tenant
+        // is already routing baseline-scope requests through this policy -
+        // even if advancedSettings.baselineScopes still reads null/unset.
+        if (isBaselineAudience && policyWasEvaluated(ap.result)) {
+          const existing = baselineAudienceEvidence.get(ap.id);
+          const createdDateTime = row.createdDateTime as string;
+          if (!existing || createdDateTime > existing) {
+            baselineAudienceEvidence.set(ap.id, createdDateTime);
+          }
+        }
+
+        const status: "blocked" | "wouldBlock" | null =
+          ap.result === "failure"
+            ? "blocked"
+            : ap.result === "reportOnlyFailure"
+            ? "wouldBlock"
+            : null;
+        if (!status) continue;
+
+        let entry = byPolicy.get(ap.id);
+        if (!entry) {
+          entry = { matches: [], truncated: false };
+          byPolicy.set(ap.id, entry);
+        }
+        if (entry.matches.length >= POLICY_SIGNIN_MATCHES_PER_POLICY_CAP) {
+          entry.truncated = true;
+          continue;
+        }
+
+        const { reason, detail } = describeFailureReason(ap);
+        entry.matches.push({
+          id: `${row.id}-${ap.id}`,
+          createdDateTime: row.createdDateTime as string,
+          userPrincipalName: (row.userPrincipalName as string) || undefined,
+          ipAddress: (row.ipAddress as string) || undefined,
+          location: formatSignInLocation(row.location),
+          clientAppUsed: (row.clientAppUsed as string) || undefined,
+          status,
+          failureReason: reason,
+          failureDetail: detail,
+        });
+      }
+    }
+
+    nextLink = response?.["@odata.nextLink"];
+    if (rowsScanned >= POLICY_SIGNIN_SCAN_ROW_CAP && nextLink) {
+      scanTruncated = true;
+    }
+    if (
+      nextLink &&
+      Date.now() - scanStart >= POLICY_SIGNIN_SCAN_TIME_BUDGET_MS
+    ) {
+      scanTruncated = true;
+    }
+  }
+
+  return { byPolicy, windowStart, scanTruncated, baselineAudienceEvidence };
+}
+
 /**
  * GET /identity/conditionalAccess/settings (beta) - returns a single $entity
  * describing tenant-wide baseline enforcement (Low-Privilege Scope
@@ -854,6 +1140,7 @@ export async function loadTenantContext(
   // The heaviest step, and the only one needing AuditLog.Read.All. Downstream
   // already treats an absent result as "not scanned".
   let unregisteredSignInApps: UnregisteredSignInAppsResult | undefined;
+  let policySignInMatches: PolicySignInLogResult | undefined;
   if (includeSignInLogs) {
     onProgress?.(RUN_STEPS.signInLogs);
     try {
@@ -865,6 +1152,16 @@ export async function loadTenantContext(
       // Needs AuditLog.Read.All and Entra ID P1 - degrade, don't fail the run
       console.warn(
         "Could not scan sign-in logs for unregistered service principals - skipping that check.",
+        e
+      );
+    }
+    onProgress?.(RUN_STEPS.signInPolicyMatches);
+    try {
+      policySignInMatches = await fetchPolicySignInMatches(client, policies);
+    } catch (e) {
+      // Needs AuditLog.Read.All - degrade, don't fail the run
+      console.warn(
+        "Could not scan sign-in logs for per-policy matches - skipping that check.",
         e
       );
     }
@@ -898,5 +1195,5 @@ export async function loadTenantContext(
     if (domain) tenantDisplayName = domain;
   }
 
-  return { tenantDisplayName, tenantId, policies, namedLocations, servicePrincipals, directoryObjects, licenses, authStrengthPolicies, unregisteredSignInApps, conditionalAccessSettings };
+  return { tenantDisplayName, tenantId, policies, namedLocations, servicePrincipals, directoryObjects, licenses, authStrengthPolicies, unregisteredSignInApps, policySignInMatches, conditionalAccessSettings };
 }

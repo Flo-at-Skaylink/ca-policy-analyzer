@@ -5,6 +5,26 @@ All notable changes to the CA Policy Analyzer will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.18.0] - 2026-09-16
+
+### Added
+
+- **Per-policy sign-in log matches on the Policies tab** - each policy card now has a collapsible "Sign-in log matches" section, below the existing Findings block, showing real sign-ins from the last 30 days that this specific policy blocked (enabled policies, `result: "failure"`) or would have blocked (report-only policies, `result: "reportOnlyFailure"`). Attribution comes from `appliedConditionalAccessPolicies` on each `/auditLogs/signIns` event, so a match is Entra's own recorded verdict for that policy, not a re-derived prediction.
+  - Table columns: User, Date/Time, Location, Client App, Status (Blocked / Would block), and Failure Reason (derived from `conditionsNotSatisfied` / enforced grant controls, with a raw-detail sub-line).
+  - Count badge on the section header: red "N blocked", amber "N would be blocked", or green "0 in last 30 days" when the policy has a clean scan.
+  - Falls back to a "not scanned" notice (matching the Missing Service Principals scan's degrade behavior) when the sign-in log scan hasn't been run - same `AuditLog.Read.All` / Entra ID P1 gate, same *Scan sign-in logs* toggle.
+  - Scan is capped (500 sign-in rows per run, 25 matches kept per policy) to bound request volume; a truncated scan or an over-cap policy says so in the UI rather than implying full coverage.
+  - New `fetchPolicySignInMatches()` in `src/lib/graph-client.ts`, new `PolicySignInMatch` / `PolicySignInMatches` / `PolicySignInLogResult` types, `TenantContext.policySignInMatches`.
+  - Findings display and logic are unchanged - this is purely an additional section beneath it.
+  - Design was validated against a static HTML mockup (`docs/mockups/sign-in-log-findings-mockup.html`) before implementation.
+
+### Fixed
+
+- **"Baseline Enforcement" finding recommended a redundant policy when enforcement was already silently active** - `checkBaselineEnforcement` treated `advancedSettings.baselineScopes` reading null/unset as "not enforced" and recommended deploying a dedicated Windows Azure AD Graph policy. That field is ambiguous by design: Microsoft's Low-Privilege Scope Enforcement rollout (MC1223829) enables itself tenant-wide automatically and never writes a record when it does, so "unset" reads identically whether the rollout hasn't reached the tenant yet or has already completed. ([Mike Crowley - Preparing for and Responding to MC1223829](https://mikecrowley.us/2026/08/03/ca-baseline-scopes-enforcement-impact/))
+  - `fetchPolicySignInMatches()` now also collects empirical evidence during its existing sign-in log scan (no extra Graph calls): for each policy, whether it was actually evaluated (`success` / `failure` / `reportOnlySuccess` / `reportOnlyFailure`, not `notApplied`/`notEnabled`) against a sign-in whose resource was Windows Azure Active Directory - proof the tenant is already routing baseline-scope requests through that policy regardless of what the tenant setting shows.
+  - New `PolicySignInLogResult.baselineAudienceEvidence` map (policy ID → most recent matching sign-in date).
+  - `checkBaselineEnforcement` now checks this evidence before recommending a new policy: if found, the finding is downgraded to **Info** ("Baseline scope enforcement already active - detected via sign-in logs") and the "deploy a policy" recommendation is dropped. No change in behavior when the sign-in log scan is off or no evidence is found - the original High-severity recommendation still fires.
+
 ## [1.17.1] - 2026-09-03
 
 ### Fixed
@@ -23,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **New findings category: "Missing Service Principals"** - apps that signed in over the last 30 days but have no service principal. Such an app isn't in the Conditional Access app picker at all, so it can be neither included nor excluded; only a policy targeting *All resources* reaches it ([Microsoft docs](https://learn.microsoft.com/entra/identity/conditional-access/concept-conditional-access-cloud-apps)). Discovery diffs `/beta/auditLogs/signInEventsAppSummary` against your service principals; per app it shows the evidence from your own logs (last seen, Request ID, user, IP, client app, deep links to Graph Explorer and the Entra sign-in logs) and what Entra recorded in `appliedConditionalAccessPolicies` on that sign-in.
+- **New findings category: "Missing Service Principals"** ([@royklo](https://github.com/royklo), [PR #31](https://github.com/Jhope188/ca-policy-analyzer/pull/31)) - apps that signed in over the last 30 days but have no service principal. Such an app isn't in the Conditional Access app picker at all, so it can be neither included nor excluded; only a policy targeting *All resources* reaches it ([Microsoft docs](https://learn.microsoft.com/entra/identity/conditional-access/concept-conditional-access-cloud-apps)). Discovery diffs `/beta/auditLogs/signInEventsAppSummary` against your service principals; per app it shows the evidence from your own logs (last seen, Request ID, user, IP, client app, deep links to Graph Explorer and the Entra sign-in logs) and what Entra recorded in `appliedConditionalAccessPolicies` on that sign-in.
 - **Policy impact evaluator** (`src/lib/policy-app-impact.ts`) - which policies would hit an app once it exists, as `willApply` / `mayApply` / `willNotApply`. Covers include/exclude by app ID, `None`, the `Office365` suite, application filters on custom security attributes, `clientAppTypes`, user scoping and workload identities; other conditions are reported as gates that must also match.
 - **Phantom exclusion detection** - a policy excluding an app that has no service principal. The exclusion protects nothing today and becomes live the moment the app is created. Its own critical finding.
 - **Generated PowerShell script** - `Register-MissingServicePrincipals.ps1`, downloadable from the finding. `-WhatIf`-first, and apps an enabled block policy would catch carry a `# BLOCKED BY: <policy>` comment on the line you'd delete.

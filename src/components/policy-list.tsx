@@ -1,6 +1,7 @@
 "use client";
 
 import { PolicyResult, Finding, ExcludedAppDetail } from "@/lib/analyzer";
+import { PolicySignInLogResult, PolicySignInMatch } from "@/lib/graph-client";
 import { SeverityBadge, Card } from "./ui-primitives";
 import { cn } from "@/lib/utils";
 import { resolveRoleList, resolveGuidList, type GuidResolverMaps } from "@/lib/role-names";
@@ -17,6 +18,7 @@ import {
   ShieldAlert,
   Search,
   X,
+  History,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -229,7 +231,141 @@ function FindingsGrouped({ findings }: { findings: Finding[] }) {
   );
 }
 
-function PolicyCard({ result, resolverMaps }: { result: PolicyResult; resolverMaps?: GuidResolverMaps }) {
+function PolicySignInMatchesSection({ policyId, result }: { policyId: string; result?: PolicySignInLogResult }) {
+  const [open, setOpen] = useState(true);
+
+  // Sign-in log scan wasn't run for this analysis (no AuditLog.Read.All / P1,
+  // or an offline export that predates this dataset).
+  if (!result) {
+    return (
+      <div className="mt-4 border-t border-gray-800 pt-4">
+        <div className="flex items-start gap-2 rounded-lg border border-dashed border-gray-700 px-3 py-2.5 text-xs text-gray-500">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>
+            Sign-in log matches not scanned — turn on{" "}
+            <strong className="text-gray-400">Scan sign-in logs</strong> and
+            re-run the analysis to see this.
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  const entry = result.byPolicy.get(policyId);
+  const matches = entry?.matches ?? [];
+  const blockedCount = matches.filter((m) => m.status === "blocked").length;
+  const wouldBlockCount = matches.filter((m) => m.status === "wouldBlock").length;
+  const totalCount = matches.length;
+
+  return (
+    <div className="mt-4 border-t border-gray-800 pt-4">
+      <button
+        onClick={() => setOpen(!open)}
+        className={cn(
+          "flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left transition-colors",
+          "border-gray-700 bg-gray-800/60 hover:bg-gray-800"
+        )}
+      >
+        <div className="flex items-center gap-2 text-xs font-semibold text-gray-200">
+          <History className="h-3.5 w-3.5 text-gray-400" />
+          Sign-in log matches
+          {totalCount > 0 ? (
+            <span
+              className={cn(
+                "rounded-full px-2 py-0.5 text-[11px] font-bold",
+                blockedCount > 0
+                  ? "bg-red-500/15 text-red-400"
+                  : "bg-amber-500/15 text-amber-400"
+              )}
+            >
+              {blockedCount > 0
+                ? `${blockedCount} blocked`
+                : `${wouldBlockCount} would be blocked`}
+            </span>
+          ) : (
+            <span className="rounded-full bg-green-500/10 px-2 py-0.5 text-[11px] font-bold text-green-400">
+              0 in last 30 days
+            </span>
+          )}
+        </div>
+        {open ? (
+          <ChevronDown className="h-4 w-4 text-gray-500" />
+        ) : (
+          <ChevronRight className="h-4 w-4 text-gray-500" />
+        )}
+      </button>
+
+      {open && (
+        <div className="mt-2">
+          {totalCount === 0 ? (
+            <p className="rounded-lg border border-gray-800 py-4 text-center text-xs italic text-gray-600">
+              No blocked or report-only-flagged sign-ins found for this policy in the last 30 days.
+            </p>
+          ) : (
+            <>
+              <p className="mb-2 px-1 text-[11px] text-gray-500">
+                Last 30 days · <strong className="text-gray-400">{totalCount}</strong> matching sign-in{totalCount !== 1 ? "s" : ""}
+                {entry?.truncated ? " (showing a sample)" : ""}
+              </p>
+              <div className="overflow-x-auto rounded-lg border border-gray-800">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-gray-800 bg-gray-900/50 text-left text-gray-500">
+                      <th className="px-3 py-1.5 font-medium">User</th>
+                      <th className="px-3 py-1.5 font-medium">Date / Time</th>
+                      <th className="px-3 py-1.5 font-medium">Location</th>
+                      <th className="px-3 py-1.5 font-medium">Client App</th>
+                      <th className="px-3 py-1.5 font-medium">Status</th>
+                      <th className="px-3 py-1.5 font-medium">Failure Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {matches.map((m) => (
+                      <SignInMatchRow key={m.id} match={m} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SignInMatchRow({ match }: { match: PolicySignInMatch }) {
+  return (
+    <tr className="border-b border-gray-800 last:border-0">
+      <td className="px-3 py-1.5 text-gray-300">{match.userPrincipalName ?? "—"}</td>
+      <td className="px-3 py-1.5 font-mono text-gray-400 whitespace-nowrap">
+        {new Date(match.createdDateTime).toISOString().replace("T", " ").slice(0, 16)} UTC
+      </td>
+      <td className="px-3 py-1.5 text-gray-400">{match.location ?? "—"}</td>
+      <td className="px-3 py-1.5 text-gray-400">{match.clientAppUsed ?? "—"}</td>
+      <td className="px-3 py-1.5">
+        <span
+          className={cn(
+            "rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase",
+            match.status === "blocked"
+              ? "bg-red-500/10 text-red-400"
+              : "bg-amber-500/10 text-amber-400"
+          )}
+        >
+          {match.status === "blocked" ? "Blocked" : "Would block"}
+        </span>
+      </td>
+      <td className="px-3 py-1.5 text-gray-400">
+        {match.failureReason ?? "—"}
+        {match.failureDetail && (
+          <div className="mt-0.5 text-[10px] text-gray-600">{match.failureDetail}</div>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+function PolicyCard({ result, resolverMaps, policySignInMatches }: { result: PolicyResult; resolverMaps?: GuidResolverMaps; policySignInMatches?: PolicySignInLogResult }) {
   const [expanded, setExpanded] = useState(false);
   const { policy, visualization, findings } = result;
 
@@ -404,6 +540,9 @@ function PolicyCard({ result, resolverMaps }: { result: PolicyResult; resolverMa
             </div>
           )}
 
+          {/* Sign-in log matches - blocked / would-block sign-ins attributed to this policy */}
+          <PolicySignInMatchesSection policyId={policy.id} result={policySignInMatches} />
+
           {/* Raw Policy ID */}
           <p className="mt-3 text-xs text-gray-700 font-mono">
             ID: {policy.id}
@@ -429,11 +568,13 @@ export function PolicyList({
   hideMicrosoft,
   onToggleHideMicrosoft,
   resolverMaps,
+  policySignInMatches,
 }: {
   results: PolicyResult[];
   hideMicrosoft: boolean;
   onToggleHideMicrosoft: (val: boolean) => void;
   resolverMaps?: GuidResolverMaps;
+  policySignInMatches?: PolicySignInLogResult;
 }) {
   const [sortBy, setSortBy] = useState<"findings" | "name" | "state">("findings");
   const [search, setSearch] = useState("");
@@ -539,7 +680,7 @@ export function PolicyList({
 
       <div className="space-y-2">
         {sorted.map((result) => (
-          <PolicyCard key={result.policy.id} result={result} resolverMaps={resolverMaps} />
+          <PolicyCard key={result.policy.id} result={result} resolverMaps={resolverMaps} policySignInMatches={policySignInMatches} />
         ))}
         {sorted.length === 0 && (
           <p className="py-8 text-center text-sm text-gray-500">

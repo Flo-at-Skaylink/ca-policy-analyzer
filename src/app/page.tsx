@@ -711,7 +711,7 @@ export default function Home() {
       {/* Tab Content */}
       {activeTab === "dashboard" && <Dashboard result={result} compositeScore={compositeScore} licenses={context?.licenses} scorecard={scorecard} />}
       {activeTab === "policies" && (
-        <PolicyList results={result.policyResults} hideMicrosoft={hideMicrosoft} onToggleHideMicrosoft={setHideMicrosoft} resolverMaps={context ? { directoryObjects: context.directoryObjects, servicePrincipals: context.servicePrincipals } : undefined} />
+        <PolicyList results={result.policyResults} hideMicrosoft={hideMicrosoft} onToggleHideMicrosoft={setHideMicrosoft} resolverMaps={context ? { directoryObjects: context.directoryObjects, servicePrincipals: context.servicePrincipals } : undefined} policySignInMatches={context?.policySignInMatches} />
       )}
       {activeTab === "findings" && (
         <FindingsList
