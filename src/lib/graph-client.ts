@@ -197,6 +197,20 @@ export interface PolicySignInLogResult {
   windowStart: string;
   /** Hit the overall scan row cap - some recent sign-ins may not be reflected. */
   scanTruncated: boolean;
+  /** Total sign-in rows actually read from Graph across all pages fetched -
+   * surfaced so "0 matches" is distinguishable from "the scan barely ran". */
+  rowsScanned: number;
+  /** Of rowsScanned, how many came back with appliedConditionalAccessPolicies
+   * missing/empty. Per Microsoft's docs Graph silently omits this field (no
+   * error) when the caller can read sign-ins but not CA data - if this equals
+   * rowsScanned, every policy will show 0 matches regardless of what actually
+   * happened in the tenant, and that's a permissions problem, not a bug here. */
+  rowsMissingCaData: number;
+  /** Set when a request failed/errored and ended the scan early (timeout,
+   * permission error, throttling, etc). Undefined when the scan ran to
+   * completion (row cap and time budget are reported via scanTruncated,
+   * not this field - only unexpected failures set it). */
+  scanError?: string;
   /**
    * Empirical evidence that a policy is already being evaluated against the
    * Windows Azure AD Graph ("baseline scopes") audience - keyed by policy ID,
@@ -808,7 +822,15 @@ export async function fetchPolicySignInMatches(
   const byPolicy = new Map<string, PolicySignInMatches>();
   const baselineAudienceEvidence = new Map<string, string>();
   let scanTruncated = false;
+  let scanError: string | undefined;
   let rowsScanned = 0;
+  // Rows where appliedConditionalAccessPolicies came back missing/empty -
+  // per Microsoft's docs this happens when the caller has AuditLog.Read.All
+  // (can read sign-ins) but not Policy.Read.All/Policy.Read.ConditionalAccess
+  // (can't read CA data), in which case Graph *silently omits* the field
+  // instead of erroring. If this equals rowsScanned, that's the real story
+  // behind an all-zero result, not a logic bug in this scan.
+  let rowsMissingCaData = 0;
   const scanStart = Date.now();
   let nextLink: string | undefined =
     `/auditLogs/signIns?$filter=${encodeURIComponent(
@@ -835,6 +857,7 @@ export async function fetchPolicySignInMatches(
       // clause returning 400) is visible in the console instead of silently
       // producing a scan that looks like "zero matches everywhere".
       console.warn("[fetchPolicySignInMatches] request failed:", error);
+      scanError = error instanceof Error ? error.message : String(error);
       scanTruncated = true;
       break;
     }
@@ -846,7 +869,10 @@ export async function fetchPolicySignInMatches(
       const applied = normalizeAppliedPolicies(
         row.appliedConditionalAccessPolicies
       );
-      if (!applied) continue;
+      if (!applied) {
+        rowsMissingCaData++;
+        continue;
+      }
 
       const isBaselineAudience =
         typeof row.resourceDisplayName === "string" &&
@@ -914,7 +940,36 @@ export async function fetchPolicySignInMatches(
     }
   }
 
-  return { byPolicy, windowStart, scanTruncated, baselineAudienceEvidence };
+  // Always logged (not just on error) so a "why is everything 0" report can
+  // be diagnosed from the browser console without adding instrumentation
+  // after the fact - this step has broken silently more than once.
+  console.info(
+    `[fetchPolicySignInMatches] scanned ${rowsScanned} row(s), ` +
+      `${rowsMissingCaData} missing CA data, ${byPolicy.size} policy(ies) with matches, ` +
+      `truncated=${scanTruncated}` +
+      (scanError ? `, error="${scanError}"` : "")
+  );
+  if (rowsScanned > 0 && rowsMissingCaData === rowsScanned) {
+    console.warn(
+      "[fetchPolicySignInMatches] every scanned sign-in was missing appliedConditionalAccessPolicies. " +
+        "Per Microsoft's docs, Graph omits this field (rather than erroring) when the caller can read " +
+        "sign-in logs (AuditLog.Read.All) but not Conditional Access data (Policy.Read.All / " +
+        "Policy.Read.ConditionalAccess). If sign-ins are showing 0 matches for every policy, check that " +
+        "the signed-in account still holds a supported Entra role (Global Reader, Security Reader, " +
+        "Security Administrator, or Conditional Access Administrator) - this can silently regress if a " +
+        "role assignment is removed or expires, even though the sign-in itself keeps working."
+    );
+  }
+
+  return {
+    byPolicy,
+    windowStart,
+    scanTruncated,
+    rowsScanned,
+    rowsMissingCaData,
+    scanError,
+    baselineAudienceEvidence,
+  };
 }
 
 /**

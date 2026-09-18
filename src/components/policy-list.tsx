@@ -314,9 +314,27 @@ function PolicySignInMatchesSection({ policyId, policyName, result }: { policyId
       {open && (
         <div className="mt-2">
           {totalCount === 0 ? (
-            <p className="rounded-lg border border-gray-800 py-4 text-center text-xs italic text-gray-600">
-              No blocked or report-only-flagged sign-ins found for this policy in the last 30 days.
-            </p>
+            <div className="rounded-lg border border-gray-800 py-4 text-center">
+              <p className="text-xs italic text-gray-600">
+                No blocked or report-only-flagged sign-ins found for this policy in the last 30 days.
+              </p>
+              {result.scanError ? (
+                <p className="mt-1.5 px-3 text-[11px] text-amber-500">
+                  The scan hit an error and stopped early - this result may be incomplete: {result.scanError}
+                </p>
+              ) : result.rowsScanned > 0 && result.rowsMissingCaData === result.rowsScanned ? (
+                <p className="mt-1.5 px-3 text-[11px] text-amber-500">
+                  Scanned {result.rowsScanned} sign-in{result.rowsScanned !== 1 ? "s" : ""}, but none included Conditional Access data -
+                  the signed-in account may be missing the Entra role needed to read it (Global Reader, Security Reader,
+                  Security Administrator, or Conditional Access Administrator). This affects every policy, not just this one.
+                </p>
+              ) : result.rowsScanned === 0 ? (
+                <p className="mt-1.5 px-3 text-[11px] text-gray-600">
+                  No sign-ins at all were returned for the last 30 days - if you expect activity, check the account still has
+                  AuditLog.Read.All consent and try again.
+                </p>
+              ) : null}
+            </div>
           ) : (
             <>
               <p className="mb-2 px-1 text-[11px] text-gray-500">
