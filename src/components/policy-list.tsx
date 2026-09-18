@@ -1,7 +1,7 @@
 "use client";
 
 import { PolicyResult, Finding, ExcludedAppDetail } from "@/lib/analyzer";
-import { PolicySignInLogResult, PolicySignInMatch, buildPolicySignInLogQueryUrl } from "@/lib/graph-client";
+import { PolicySignInLogResult, PolicySignInMatch, buildPolicySignInLogQueryUrl, buildSignInMatchLogQueryUrl } from "@/lib/graph-client";
 import { SeverityBadge, Card } from "./ui-primitives";
 import { cn } from "@/lib/utils";
 import { resolveRoleList, resolveGuidList, type GuidResolverMaps } from "@/lib/role-names";
@@ -352,11 +352,14 @@ function PolicySignInMatchesSection({ policyId, policyName, result }: { policyId
                       <th className="px-3 py-1.5 font-medium">Client App</th>
                       <th className="px-3 py-1.5 font-medium">Status</th>
                       <th className="px-3 py-1.5 font-medium">Failure Reason</th>
+                      <th className="px-3 py-1.5 font-medium">
+                        <span className="sr-only">View in Graph Explorer</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {visibleMatches.map((m) => (
-                      <SignInMatchRow key={m.id} match={m} />
+                      <SignInMatchRow key={m.id} match={m} fallbackLogQueryUrl={logQueryUrl} />
                     ))}
                   </tbody>
                 </table>
@@ -385,7 +388,14 @@ function PolicySignInMatchesSection({ policyId, policyName, result }: { policyId
   );
 }
 
-function SignInMatchRow({ match }: { match: PolicySignInMatch }) {
+function SignInMatchRow({ match, fallbackLogQueryUrl }: { match: PolicySignInMatch; fallbackLogQueryUrl: string }) {
+  // Prefers a link scoped to this exact user + a narrow (+/-2h) time window -
+  // both userPrincipalName and createdDateTime are documented as filterable
+  // on /auditLogs/signIns, unlike policy attribution. Falls back to the
+  // date-only, policy-wide link for matches with no userPrincipalName (e.g.
+  // workload identity sign-ins), where the narrow filter can't be built.
+  const matchUrl = buildSignInMatchLogQueryUrl(match) ?? fallbackLogQueryUrl;
+
   return (
     <tr className="border-b border-gray-800 last:border-0">
       <td className="px-3 py-1.5 text-gray-300">{match.userPrincipalName ?? "—"}</td>
@@ -411,6 +421,17 @@ function SignInMatchRow({ match }: { match: PolicySignInMatch }) {
         {match.failureDetail && (
           <div className="mt-0.5 text-[10px] text-gray-600">{match.failureDetail}</div>
         )}
+      </td>
+      <td className="px-3 py-1.5">
+        <a
+          href={matchUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="View this sign-in in Microsoft Graph Explorer"
+          className="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300"
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+        </a>
       </td>
     </tr>
   );

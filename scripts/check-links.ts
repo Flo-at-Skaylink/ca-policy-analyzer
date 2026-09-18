@@ -13,6 +13,7 @@ import {
   ENTRA_SIGNIN_LOGS_PATH,
   buildSignInLogQueryUrl,
   buildPolicySignInLogQueryUrl,
+  buildSignInMatchLogQueryUrl,
 } from "../src/lib/graph-client";
 
 const APP_ID = "04b07795-8ddb-461a-bbee-02f9e1bf7b46";
@@ -25,6 +26,19 @@ const nonInteractive = buildSignInLogQueryUrl(APP_ID, WINDOW_START, "nonInteract
 const servicePrincipal = buildSignInLogQueryUrl(APP_ID, WINDOW_START, "servicePrincipal");
 const managedIdentity = buildSignInLogQueryUrl(APP_ID, WINDOW_START, "managedIdentity");
 const policyMatches = buildPolicySignInLogQueryUrl(POLICY_NAME, WINDOW_START);
+const MATCH_TIME = "2026-08-03T14:32:07.123Z";
+const matchLink = buildSignInMatchLogQueryUrl({
+  userPrincipalName: "Jane.Doe@Contoso.com",
+  createdDateTime: MATCH_TIME,
+});
+const matchLinkNoUpn = buildSignInMatchLogQueryUrl({
+  userPrincipalName: undefined,
+  createdDateTime: MATCH_TIME,
+});
+const matchLinkBadDate = buildSignInMatchLogQueryUrl({
+  userPrincipalName: "jane.doe@contoso.com",
+  createdDateTime: "not-a-date",
+});
 
 const checks: Array<[string, () => void]> = [
   [
@@ -117,6 +131,43 @@ const checks: Array<[string, () => void]> = [
       assert.ok(request.includes("$top=200"));
       assert.ok(!request.includes("%2524"), "$ must not be double-encoded");
       assert.ok(!request.includes("%2520"), "spaces must not be double-encoded");
+    },
+  ],
+  [
+    "the per-match link filters by user + a narrow window around the match - both documented $filter properties",
+    () => {
+      assert.ok(matchLink, "matchLink must be defined for a match with a UPN and valid date");
+      const u = new URL(matchLink!);
+      assert.equal(u.host, "developer.microsoft.com");
+      const request = u.searchParams.get("request")!;
+      assert.ok(request.startsWith("auditLogs/signIns?"));
+      assert.ok(
+        request.includes("userPrincipalName eq 'jane.doe@contoso.com'"),
+        "UPN must be lowercased and quoted"
+      );
+      assert.ok(
+        request.includes("createdDateTime ge 2026-08-03T12:32:07.000Z"),
+        "range start must be 2h before the match"
+      );
+      assert.ok(
+        request.includes("createdDateTime le 2026-08-03T16:32:07.000Z"),
+        "range end must be 2h after the match"
+      );
+      // Deliberately must NOT attempt to *filter* by appliedConditionalAccessPolicies -
+      // same documented-unsupported property that broke an earlier attempt.
+      // (It's fine, and expected, for $select to still request the field for display.)
+      assert.ok(!request.includes("appliedConditionalAccessPolicies/any"));
+      const filterClause = request.split("$select")[0];
+      assert.ok(!filterClause.includes("appliedConditionalAccessPolicies"));
+      assert.ok(!request.includes("%2524"), "$ must not be double-encoded");
+      assert.ok(!request.includes("%2520"), "spaces must not be double-encoded");
+    },
+  ],
+  [
+    "the per-match link falls back to undefined when there's no UPN or an unparsable date",
+    () => {
+      assert.equal(matchLinkNoUpn, undefined, "no UPN (e.g. workload identity) must fall back");
+      assert.equal(matchLinkBadDate, undefined, "an unparsable createdDateTime must fall back");
     },
   ],
   [

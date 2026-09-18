@@ -536,6 +536,66 @@ export function buildPolicySignInLogQueryUrl(
 }
 
 /**
+ * Graph Explorer permalink scoped to ONE specific sign-in match - the closest
+ * this app gets to "show me just this failed sign-in". Unlike
+ * buildPolicySignInLogQueryUrl (date-only, because policy attribution isn't
+ * filterable), this filters by `userPrincipalName eq` and a narrow
+ * `createdDateTime` window bracketing the exact match - both are documented
+ * as filterable on `/auditLogs/signIns`:
+ *   https://learn.microsoft.com/en-us/graph/api/resources/signin
+ *     userPrincipalName: "Supports $filter (eq, startsWith)"
+ *     createdDateTime:   "Supports $orderby, $filter (eq, le, and ge)"
+ * This is real, documented filter support - not a repeat of the
+ * appliedConditionalAccessPolicies/conditionalAccessStatus mistakes from
+ * earlier in this project's history. Still can't filter by policy directly,
+ * so the result may include other sign-ins from the same user that day; the
+ * exact match is easy to spot since the window is only +/-2 hours.
+ *
+ * Falls back to `undefined` for matches with no userPrincipalName (e.g. a
+ * workload identity / service principal sign-in) - there's no equally
+ * reliable narrow filter for those today, so callers should fall back to
+ * buildPolicySignInLogQueryUrl in that case rather than get a link that
+ * silently returns nothing useful.
+ */
+export function buildSignInMatchLogQueryUrl(
+  match: Pick<PolicySignInMatch, "userPrincipalName" | "createdDateTime">
+): string | undefined {
+  if (!match.userPrincipalName) return undefined;
+
+  const matchTime = new Date(match.createdDateTime).getTime();
+  if (Number.isNaN(matchTime)) return undefined;
+
+  const isoNoMillis = (ms: number) =>
+    new Date(ms).toISOString().replace(/\.\d{3}Z$/, ".000Z");
+  const WINDOW_MS = 2 * 60 * 60 * 1000; // +/-2h - narrow, but tolerant of clock/paging skew
+  const rangeStart = isoNoMillis(matchTime - WINDOW_MS);
+  const rangeEnd = isoNoMillis(matchTime + WINDOW_MS);
+
+  // userPrincipalName values from Graph are always lowercase per the docs
+  // ("This value is always in lowercase"); escape a literal single quote per
+  // OData string-literal syntax ('' inside the quoted string) just in case.
+  const upn = match.userPrincipalName.toLowerCase().replace(/'/g, "''");
+
+  const request =
+    `auditLogs/signIns?$filter=` +
+    `userPrincipalName eq '${upn}' and createdDateTime ge ${rangeStart} and createdDateTime le ${rangeEnd}` +
+    `&$select=${POLICY_SIGNIN_SELECT}` +
+    `&$orderby=createdDateTime desc` +
+    `&$top=25`;
+  const headers = btoa(
+    JSON.stringify([{ name: "Prefer", value: "include-unknown-enum-members" }])
+  );
+
+  return (
+    "https://developer.microsoft.com/graph/graph-explorer" +
+    `?request=${encodeURIComponent(request)}` +
+    "&method=GET&version=beta" +
+    `&GraphUrl=${encodeURIComponent("https://graph.microsoft.com")}` +
+    `&headers=${encodeURIComponent(headers)}`
+  );
+}
+
+/**
  * Captured from a live page; Microsoft documents no deep link. A fragment never
  * reaches the server, so a wrong blade looks fine from the outside - hence
  * scripts/check-links.ts pins this one.
