@@ -474,6 +474,54 @@ export function buildSignInLogQueryUrl(
 }
 
 /**
+ * Graph Explorer permalink for "the rest" of a policy's sign-in matches
+ * beyond what the UI shows inline - same time window and `$select` as the
+ * scan itself (so the `appliedConditionalAccessPolicies` column is present),
+ * capped at a larger `$top` for manual review.
+ *
+ * Deliberately does NOT filter server-side by policy id:
+ * `appliedConditionalAccessPolicies` is not documented as a filterable
+ * property on `/auditLogs/signIns` (only `createdDateTime`, `appId`,
+ * `signInEventTypes/any(...)` and a few others are), and a previous attempt
+ * to filter on the sibling `conditionalAccessStatus` property was silently
+ * rejected by Graph, producing an empty-looking scan instead of an error.
+ * Given that history, this link intentionally stays on the known-supported
+ * `createdDateTime` filter and asks the admin to locate this policy by name
+ * within the `appliedConditionalAccessPolicies` column of the results,
+ * rather than risk the same failure mode for a "convenience" filter.
+ */
+export function buildPolicySignInLogQueryUrl(
+  policyDisplayName: string,
+  windowStart: string
+): string {
+  // Left unencoded here, same as buildSignInLogQueryUrl above - the whole
+  // `request` string gets encodeURIComponent'd once below when it's placed
+  // into the outer URL's query string. Encoding it here too would double-
+  // encode (e.g. a literal space becomes %2520 instead of %20).
+  const request =
+    `auditLogs/signIns?$filter=createdDateTime ge ${windowStart}` +
+    `&$select=${POLICY_SIGNIN_SELECT}` +
+    `&$orderby=createdDateTime desc` +
+    `&$top=200`;
+  const headers = btoa(
+    JSON.stringify([{ name: "Prefer", value: "include-unknown-enum-members" }])
+  );
+
+  return (
+    "https://developer.microsoft.com/graph/graph-explorer" +
+    `?request=${encodeURIComponent(request)}` +
+    "&method=GET&version=beta" +
+    `&GraphUrl=${encodeURIComponent("https://graph.microsoft.com")}` +
+    `&headers=${encodeURIComponent(headers)}` +
+    // Not consumed by Graph Explorer itself - harmless, but documents intent
+    // in the URL for anyone inspecting it, and is a no-op if stripped.
+    `&note=${encodeURIComponent(
+      `Find "${policyDisplayName}" in appliedConditionalAccessPolicies`
+    )}`
+  );
+}
+
+/**
  * Captured from a live page; Microsoft documents no deep link. A fragment never
  * reaches the server, so a wrong blade looks fine from the outside - hence
  * scripts/check-links.ts pins this one.
@@ -1143,33 +1191,44 @@ export async function loadTenantContext(
 
   // The heaviest step, and the only one needing AuditLog.Read.All. Downstream
   // already treats an absent result as "not scanned".
+  //
+  // These two scans hit different endpoints (signInEventsAppSummary vs.
+  // signIns) and share no data dependency, so they run concurrently rather
+  // than one after the other - on a tenant where each takes several seconds,
+  // this roughly halves the wall-clock time of this step. Progress is
+  // reported once, up front, since there's no meaningful "step 1 done, step
+  // 2 starting" boundary anymore when both are in flight together.
   let unregisteredSignInApps: UnregisteredSignInAppsResult | undefined;
   let policySignInMatches: PolicySignInLogResult | undefined;
   if (includeSignInLogs) {
     onProgress?.(RUN_STEPS.signInLogs);
-    try {
-      unregisteredSignInApps = await fetchUnregisteredSignInApps(
-        client,
-        servicePrincipals
-      );
-    } catch (e) {
+    onProgress?.(RUN_STEPS.signInPolicyMatches);
+    const [appsResult, matchesResult] = await Promise.allSettled([
+      fetchUnregisteredSignInApps(client, servicePrincipals),
+      fetchPolicySignInMatches(client, policies),
+    ]);
+
+    if (appsResult.status === "fulfilled") {
+      unregisteredSignInApps = appsResult.value;
+    } else {
       // Needs AuditLog.Read.All and Entra ID P1 - degrade, don't fail the run
       console.warn(
         "Could not scan sign-in logs for unregistered service principals - skipping that check.",
-        e
+        appsResult.reason
       );
     }
-    onProgress?.(RUN_STEPS.signInPolicyMatches);
-    try {
-      policySignInMatches = await fetchPolicySignInMatches(client, policies);
-    } catch (e) {
+
+    if (matchesResult.status === "fulfilled") {
+      policySignInMatches = matchesResult.value;
+    } else {
       // Needs AuditLog.Read.All - degrade, don't fail the run
       console.warn(
         "Could not scan sign-in logs for per-policy matches - skipping that check.",
-        e
+        matchesResult.reason
       );
     }
   }
+
 
   onProgress?.(RUN_STEPS.directoryObjects);
   const directoryObjects = await resolveDirectoryObjects(client, policies);

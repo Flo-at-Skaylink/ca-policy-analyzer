@@ -1,7 +1,7 @@
 "use client";
 
 import { PolicyResult, Finding, ExcludedAppDetail } from "@/lib/analyzer";
-import { PolicySignInLogResult, PolicySignInMatch } from "@/lib/graph-client";
+import { PolicySignInLogResult, PolicySignInMatch, buildPolicySignInLogQueryUrl } from "@/lib/graph-client";
 import { SeverityBadge, Card } from "./ui-primitives";
 import { cn } from "@/lib/utils";
 import { resolveRoleList, resolveGuidList, type GuidResolverMaps } from "@/lib/role-names";
@@ -19,6 +19,7 @@ import {
   Search,
   X,
   History,
+  ExternalLink,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -231,7 +232,7 @@ function FindingsGrouped({ findings }: { findings: Finding[] }) {
   );
 }
 
-function PolicySignInMatchesSection({ policyId, result }: { policyId: string; result?: PolicySignInLogResult }) {
+function PolicySignInMatchesSection({ policyId, policyName, result }: { policyId: string; policyName: string; result?: PolicySignInLogResult }) {
   const [open, setOpen] = useState(true);
 
   // Sign-in log scan wasn't run for this analysis (no AuditLog.Read.All / P1,
@@ -256,6 +257,15 @@ function PolicySignInMatchesSection({ policyId, result }: { policyId: string; re
   const blockedCount = matches.filter((m) => m.status === "blocked").length;
   const wouldBlockCount = matches.filter((m) => m.status === "wouldBlock").length;
   const totalCount = matches.length;
+
+  // The scan already caps matches per policy (POLICY_SIGNIN_MATCHES_PER_POLICY_CAP
+  // = 25), and this trims the inline view further so a noisy policy doesn't
+  // dominate the card - "view the rest in the sign-in logs" covers the gap.
+  const VISIBLE_MATCHES_LIMIT = 10;
+  const visibleMatches = matches.slice(0, VISIBLE_MATCHES_LIMIT);
+  const hiddenCount = totalCount - visibleMatches.length;
+  const hasMoreToSee = hiddenCount > 0 || entry?.truncated;
+  const logQueryUrl = buildPolicySignInLogQueryUrl(policyName, result.windowStart);
 
   return (
     <div className="mt-4 border-t border-gray-800 pt-4">
@@ -305,7 +315,8 @@ function PolicySignInMatchesSection({ policyId, result }: { policyId: string; re
             <>
               <p className="mb-2 px-1 text-[11px] text-gray-500">
                 Last 30 days · <strong className="text-gray-400">{totalCount}</strong> matching sign-in{totalCount !== 1 ? "s" : ""}
-                {entry?.truncated ? " (showing a sample)" : ""}
+                {hiddenCount > 0 ? ` · showing first ${visibleMatches.length}` : ""}
+                {entry?.truncated ? " (sample - more exist beyond the scan cap)" : ""}
               </p>
               <div className="overflow-x-auto rounded-lg border border-gray-800">
                 <table className="w-full text-xs">
@@ -320,13 +331,29 @@ function PolicySignInMatchesSection({ policyId, result }: { policyId: string; re
                     </tr>
                   </thead>
                   <tbody>
-                    {matches.map((m) => (
+                    {visibleMatches.map((m) => (
                       <SignInMatchRow key={m.id} match={m} />
                     ))}
                   </tbody>
                 </table>
               </div>
             </>
+          )}
+          {hasMoreToSee && (
+            <a
+              href={logQueryUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 flex items-center gap-1.5 rounded-lg border border-gray-800 px-3 py-2 text-[11px] text-blue-400 hover:border-gray-700 hover:bg-gray-800/40"
+            >
+              <ExternalLink className="h-3 w-3 shrink-0" />
+              {hiddenCount > 0
+                ? `View ${hiddenCount} more in Microsoft Graph Explorer`
+                : "View full sign-in logs in Microsoft Graph Explorer"}
+              <span className="text-gray-600">
+                — search for &ldquo;{policyName}&rdquo; in the results
+              </span>
+            </a>
           )}
         </div>
       )}
@@ -541,7 +568,7 @@ function PolicyCard({ result, resolverMaps, policySignInMatches }: { result: Pol
           )}
 
           {/* Sign-in log matches - blocked / would-block sign-ins attributed to this policy */}
-          <PolicySignInMatchesSection policyId={policy.id} result={policySignInMatches} />
+          <PolicySignInMatchesSection policyId={policy.id} policyName={policy.displayName} result={policySignInMatches} />
 
           {/* Raw Policy ID */}
           <p className="mt-3 text-xs text-gray-700 font-mono">

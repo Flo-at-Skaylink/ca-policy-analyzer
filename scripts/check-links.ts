@@ -12,16 +12,19 @@ import {
   ENTRA_SIGNIN_LOGS_URL,
   ENTRA_SIGNIN_LOGS_PATH,
   buildSignInLogQueryUrl,
+  buildPolicySignInLogQueryUrl,
 } from "../src/lib/graph-client";
 
 const APP_ID = "04b07795-8ddb-461a-bbee-02f9e1bf7b46";
 const WINDOW_START = "2026-08-03T00:00:00.000Z";
+const POLICY_NAME = "IAC - INTUNE - GRANT - RequireCompliantDevice";
 
 const unqualified = buildSignInLogQueryUrl(APP_ID, WINDOW_START);
 const interactive = buildSignInLogQueryUrl(APP_ID, WINDOW_START, "interactiveUser");
 const nonInteractive = buildSignInLogQueryUrl(APP_ID, WINDOW_START, "nonInteractiveUser");
 const servicePrincipal = buildSignInLogQueryUrl(APP_ID, WINDOW_START, "servicePrincipal");
 const managedIdentity = buildSignInLogQueryUrl(APP_ID, WINDOW_START, "managedIdentity");
+const policyMatches = buildPolicySignInLogQueryUrl(POLICY_NAME, WINDOW_START);
 
 const checks: Array<[string, () => void]> = [
   [
@@ -95,6 +98,25 @@ const checks: Array<[string, () => void]> = [
       // Used for apps with no evidence row; asserting "interactive" there is
       // what made those links come back empty.
       assert.equal(req(unqualified), req(interactive));
+    },
+  ],
+  [
+    "the per-policy matches link filters only by date - no unsupported policy-id filter",
+    () => {
+      const u = new URL(policyMatches);
+      assert.equal(u.host, "developer.microsoft.com");
+      const request = u.searchParams.get("request")!;
+      assert.ok(request.startsWith("auditLogs/signIns?"));
+      assert.ok(request.includes(`createdDateTime ge ${WINDOW_START}`));
+      // Deliberately must NOT attempt to filter by appliedConditionalAccessPolicies -
+      // that property isn't documented as filterable, and a past attempt at
+      // filtering the sibling conditionalAccessStatus property was silently
+      // rejected by Graph. This link stays on the known-supported filter.
+      assert.ok(!request.includes("appliedConditionalAccessPolicies/any"));
+      assert.ok(request.includes("$orderby=createdDateTime desc"));
+      assert.ok(request.includes("$top=200"));
+      assert.ok(!request.includes("%2524"), "$ must not be double-encoded");
+      assert.ok(!request.includes("%2520"), "spaces must not be double-encoded");
     },
   ],
   [
