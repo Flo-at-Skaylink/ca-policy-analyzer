@@ -69,6 +69,13 @@ export interface DiscoveredAppDetail {
   baselineNote?: string;
   phantomExclusionPolicies: string[];
   evidenceMissing: boolean;
+  /** Set when the predicted severity was downgraded because the app's own
+   * evidence row (conditionalAccessStatus / observedPolicies) contradicts the
+   * prediction - e.g. Conditional Access already evaluated and passed this
+   * exact sign-in, or the only reason the sampled sign-in didn't match a
+   * policy was that the specific user was excluded, not that the app is
+   * unreachable. Absent when the predicted severity stands unchanged. */
+  evidenceNote?: string;
 }
 
 export interface Finding {
@@ -251,7 +258,7 @@ export function analyzeAllPolicies(context: TenantContext): AnalysisResult {
 
   // MS Learn documented exclusion checks
   const exclusionFindings: ExclusionFinding[] = context.policies.flatMap((p) =>
-    checkPolicyExclusions(p, context.authStrengthPolicies)
+    checkPolicyExclusions(p, context.authStrengthPolicies, context.eamState)
   );
 
   // Convert critical/high exclusion findings into the main findings list AND

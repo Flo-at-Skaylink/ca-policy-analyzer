@@ -8,6 +8,9 @@
 		},
 		{
 			"path": "../ConditionalAccessPolicies"
+		},
+		{
+			"path": "."
 		}
 	],
 	"settings": {}

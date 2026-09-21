@@ -1,7 +1,7 @@
 "use client";
 
 import { PolicyResult, Finding, ExcludedAppDetail } from "@/lib/analyzer";
-import { PolicySignInLogResult, PolicySignInMatch } from "@/lib/graph-client";
+import { PolicySignInLogResult, PolicySignInMatch, buildPolicySignInLogQueryUrl, buildSignInMatchLogQueryUrl } from "@/lib/graph-client";
 import { SeverityBadge, Card } from "./ui-primitives";
 import { cn } from "@/lib/utils";
 import { resolveRoleList, resolveGuidList, type GuidResolverMaps } from "@/lib/role-names";
@@ -19,6 +19,7 @@ import {
   Search,
   X,
   History,
+  ExternalLink,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -231,8 +232,14 @@ function FindingsGrouped({ findings }: { findings: Finding[] }) {
   );
 }
 
-function PolicySignInMatchesSection({ policyId, result }: { policyId: string; result?: PolicySignInLogResult }) {
-  const [open, setOpen] = useState(true);
+function PolicySignInMatchesSection({ policyId, policyName, result }: { policyId: string; policyName: string; result?: PolicySignInLogResult }) {
+  // Default collapsed when there's nothing to see - most policies in a
+  // healthy tenant show "0 in last 30 days", and expanding all of them by
+  // default made cards taller than they needed to be. Policies that DID
+  // catch something (blocked/would-block matches) still open by default so
+  // the finding is visible without an extra click.
+  const hasAnyMatches = (result?.byPolicy.get(policyId)?.matches.length ?? 0) > 0;
+  const [open, setOpen] = useState(hasAnyMatches);
 
   // Sign-in log scan wasn't run for this analysis (no AuditLog.Read.All / P1,
   // or an offline export that predates this dataset).
@@ -256,6 +263,15 @@ function PolicySignInMatchesSection({ policyId, result }: { policyId: string; re
   const blockedCount = matches.filter((m) => m.status === "blocked").length;
   const wouldBlockCount = matches.filter((m) => m.status === "wouldBlock").length;
   const totalCount = matches.length;
+
+  // The scan already caps matches per policy (POLICY_SIGNIN_MATCHES_PER_POLICY_CAP
+  // = 25), and this trims the inline view further so a noisy policy doesn't
+  // dominate the card - "view the rest in the sign-in logs" covers the gap.
+  const VISIBLE_MATCHES_LIMIT = 10;
+  const visibleMatches = matches.slice(0, VISIBLE_MATCHES_LIMIT);
+  const hiddenCount = totalCount - visibleMatches.length;
+  const hasMoreToSee = hiddenCount > 0 || entry?.truncated;
+  const logQueryUrl = buildPolicySignInLogQueryUrl(policyName, result.windowStart);
 
   return (
     <div className="mt-4 border-t border-gray-800 pt-4">
@@ -298,14 +314,33 @@ function PolicySignInMatchesSection({ policyId, result }: { policyId: string; re
       {open && (
         <div className="mt-2">
           {totalCount === 0 ? (
-            <p className="rounded-lg border border-gray-800 py-4 text-center text-xs italic text-gray-600">
-              No blocked or report-only-flagged sign-ins found for this policy in the last 30 days.
-            </p>
+            <div className="rounded-lg border border-gray-800 py-4 text-center">
+              <p className="text-xs italic text-gray-600">
+                No blocked or report-only-flagged sign-ins found for this policy in the last 30 days.
+              </p>
+              {result.scanError ? (
+                <p className="mt-1.5 px-3 text-[11px] text-amber-500">
+                  The scan hit an error and stopped early - this result may be incomplete: {result.scanError}
+                </p>
+              ) : result.rowsScanned > 0 && result.rowsMissingCaData === result.rowsScanned ? (
+                <p className="mt-1.5 px-3 text-[11px] text-amber-500">
+                  Scanned {result.rowsScanned} sign-in{result.rowsScanned !== 1 ? "s" : ""}, but none included Conditional Access data -
+                  the signed-in account may be missing the Entra role needed to read it (Global Reader, Security Reader,
+                  Security Administrator, or Conditional Access Administrator). This affects every policy, not just this one.
+                </p>
+              ) : result.rowsScanned === 0 ? (
+                <p className="mt-1.5 px-3 text-[11px] text-gray-600">
+                  No sign-ins at all were returned for the last 30 days - if you expect activity, check the account still has
+                  AuditLog.Read.All consent and try again.
+                </p>
+              ) : null}
+            </div>
           ) : (
             <>
               <p className="mb-2 px-1 text-[11px] text-gray-500">
                 Last 30 days · <strong className="text-gray-400">{totalCount}</strong> matching sign-in{totalCount !== 1 ? "s" : ""}
-                {entry?.truncated ? " (showing a sample)" : ""}
+                {hiddenCount > 0 ? ` · showing first ${visibleMatches.length}` : ""}
+                {entry?.truncated ? " (sample - more exist beyond the scan cap)" : ""}
               </p>
               <div className="overflow-x-auto rounded-lg border border-gray-800">
                 <table className="w-full text-xs">
@@ -317,16 +352,35 @@ function PolicySignInMatchesSection({ policyId, result }: { policyId: string; re
                       <th className="px-3 py-1.5 font-medium">Client App</th>
                       <th className="px-3 py-1.5 font-medium">Status</th>
                       <th className="px-3 py-1.5 font-medium">Failure Reason</th>
+                      <th className="px-3 py-1.5 font-medium">
+                        <span className="sr-only">View in Graph Explorer</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
-                    {matches.map((m) => (
-                      <SignInMatchRow key={m.id} match={m} />
+                    {visibleMatches.map((m) => (
+                      <SignInMatchRow key={m.id} match={m} fallbackLogQueryUrl={logQueryUrl} />
                     ))}
                   </tbody>
                 </table>
               </div>
             </>
+          )}
+          {hasMoreToSee && (
+            <a
+              href={logQueryUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 flex items-center gap-1.5 rounded-lg border border-gray-800 px-3 py-2 text-[11px] text-blue-400 hover:border-gray-700 hover:bg-gray-800/40"
+            >
+              <ExternalLink className="h-3 w-3 shrink-0" />
+              {hiddenCount > 0
+                ? `View ${hiddenCount} more in Microsoft Graph Explorer`
+                : "View full sign-in logs in Microsoft Graph Explorer"}
+              <span className="text-gray-600">
+                — search for &ldquo;{policyName}&rdquo; in the results
+              </span>
+            </a>
           )}
         </div>
       )}
@@ -334,7 +388,14 @@ function PolicySignInMatchesSection({ policyId, result }: { policyId: string; re
   );
 }
 
-function SignInMatchRow({ match }: { match: PolicySignInMatch }) {
+function SignInMatchRow({ match, fallbackLogQueryUrl }: { match: PolicySignInMatch; fallbackLogQueryUrl: string }) {
+  // Prefers a link scoped to this exact user + a narrow (+/-2h) time window -
+  // both userPrincipalName and createdDateTime are documented as filterable
+  // on /auditLogs/signIns, unlike policy attribution. Falls back to the
+  // date-only, policy-wide link for matches with no userPrincipalName (e.g.
+  // workload identity sign-ins), where the narrow filter can't be built.
+  const matchUrl = buildSignInMatchLogQueryUrl(match) ?? fallbackLogQueryUrl;
+
   return (
     <tr className="border-b border-gray-800 last:border-0">
       <td className="px-3 py-1.5 text-gray-300">{match.userPrincipalName ?? "—"}</td>
@@ -360,6 +421,17 @@ function SignInMatchRow({ match }: { match: PolicySignInMatch }) {
         {match.failureDetail && (
           <div className="mt-0.5 text-[10px] text-gray-600">{match.failureDetail}</div>
         )}
+      </td>
+      <td className="px-3 py-1.5">
+        <a
+          href={matchUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="View this sign-in in Microsoft Graph Explorer"
+          className="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300"
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+        </a>
       </td>
     </tr>
   );
@@ -541,7 +613,7 @@ function PolicyCard({ result, resolverMaps, policySignInMatches }: { result: Pol
           )}
 
           {/* Sign-in log matches - blocked / would-block sign-ins attributed to this policy */}
-          <PolicySignInMatchesSection policyId={policy.id} result={policySignInMatches} />
+          <PolicySignInMatchesSection policyId={policy.id} policyName={policy.displayName} result={policySignInMatches} />
 
           {/* Raw Policy ID */}
           <p className="mt-3 text-xs text-gray-700 font-mono">

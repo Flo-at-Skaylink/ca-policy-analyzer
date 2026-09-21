@@ -8,20 +8,38 @@
 
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   ENTRA_SIGNIN_LOGS_URL,
   ENTRA_SIGNIN_LOGS_PATH,
   buildSignInLogQueryUrl,
+  buildPolicySignInLogQueryUrl,
+  buildSignInMatchLogQueryUrl,
 } from "../src/lib/graph-client";
 
 const APP_ID = "04b07795-8ddb-461a-bbee-02f9e1bf7b46";
 const WINDOW_START = "2026-08-03T00:00:00.000Z";
+const POLICY_NAME = "IAC - INTUNE - GRANT - RequireCompliantDevice";
 
 const unqualified = buildSignInLogQueryUrl(APP_ID, WINDOW_START);
 const interactive = buildSignInLogQueryUrl(APP_ID, WINDOW_START, "interactiveUser");
 const nonInteractive = buildSignInLogQueryUrl(APP_ID, WINDOW_START, "nonInteractiveUser");
 const servicePrincipal = buildSignInLogQueryUrl(APP_ID, WINDOW_START, "servicePrincipal");
 const managedIdentity = buildSignInLogQueryUrl(APP_ID, WINDOW_START, "managedIdentity");
+const policyMatches = buildPolicySignInLogQueryUrl(POLICY_NAME, WINDOW_START);
+const MATCH_TIME = "2026-08-03T14:32:07.123Z";
+const matchLink = buildSignInMatchLogQueryUrl({
+  userPrincipalName: "Jane.Doe@Contoso.com",
+  createdDateTime: MATCH_TIME,
+});
+const matchLinkNoUpn = buildSignInMatchLogQueryUrl({
+  userPrincipalName: undefined,
+  createdDateTime: MATCH_TIME,
+});
+const matchLinkBadDate = buildSignInMatchLogQueryUrl({
+  userPrincipalName: "jane.doe@contoso.com",
+  createdDateTime: "not-a-date",
+});
 
 const checks: Array<[string, () => void]> = [
   [
@@ -98,6 +116,62 @@ const checks: Array<[string, () => void]> = [
     },
   ],
   [
+    "the per-policy matches link filters only by date - no unsupported policy-id filter",
+    () => {
+      const u = new URL(policyMatches);
+      assert.equal(u.host, "developer.microsoft.com");
+      const request = u.searchParams.get("request")!;
+      assert.ok(request.startsWith("auditLogs/signIns?"));
+      assert.ok(request.includes(`createdDateTime ge ${WINDOW_START}`));
+      // Deliberately must NOT attempt to filter by appliedConditionalAccessPolicies -
+      // that property isn't documented as filterable, and a past attempt at
+      // filtering the sibling conditionalAccessStatus property was silently
+      // rejected by Graph. This link stays on the known-supported filter.
+      assert.ok(!request.includes("appliedConditionalAccessPolicies/any"));
+      assert.ok(request.includes("$orderby=createdDateTime desc"));
+      assert.ok(request.includes("$top=200"));
+      assert.ok(!request.includes("%2524"), "$ must not be double-encoded");
+      assert.ok(!request.includes("%2520"), "spaces must not be double-encoded");
+    },
+  ],
+  [
+    "the per-match link filters by user + a narrow window around the match - both documented $filter properties",
+    () => {
+      assert.ok(matchLink, "matchLink must be defined for a match with a UPN and valid date");
+      const u = new URL(matchLink!);
+      assert.equal(u.host, "developer.microsoft.com");
+      const request = u.searchParams.get("request")!;
+      assert.ok(request.startsWith("auditLogs/signIns?"));
+      assert.ok(
+        request.includes("userPrincipalName eq 'jane.doe@contoso.com'"),
+        "UPN must be lowercased and quoted"
+      );
+      assert.ok(
+        request.includes("createdDateTime ge 2026-08-03T12:32:07.000Z"),
+        "range start must be 2h before the match"
+      );
+      assert.ok(
+        request.includes("createdDateTime le 2026-08-03T16:32:07.000Z"),
+        "range end must be 2h after the match"
+      );
+      // Deliberately must NOT attempt to *filter* by appliedConditionalAccessPolicies -
+      // same documented-unsupported property that broke an earlier attempt.
+      // (It's fine, and expected, for $select to still request the field for display.)
+      assert.ok(!request.includes("appliedConditionalAccessPolicies/any"));
+      const filterClause = request.split("$select")[0];
+      assert.ok(!filterClause.includes("appliedConditionalAccessPolicies"));
+      assert.ok(!request.includes("%2524"), "$ must not be double-encoded");
+      assert.ok(!request.includes("%2520"), "spaces must not be double-encoded");
+    },
+  ],
+  [
+    "the per-match link falls back to undefined when there's no UPN or an unparsable date",
+    () => {
+      assert.equal(matchLinkNoUpn, undefined, "no UPN (e.g. workload identity) must fall back");
+      assert.equal(matchLinkBadDate, undefined, "an unparsable createdDateTime must fall back");
+    },
+  ],
+  [
     "the sign-in logs link uses the live-captured Entra blade",
     () => {
       const u = new URL(ENTRA_SIGNIN_LOGS_URL);
@@ -117,7 +191,7 @@ const checks: Array<[string, () => void]> = [
       assert.equal(u.search, "", "no feature.* query flags");
 
       const source = fs.readFileSync(
-        new URL("../src/components/findings-list.tsx", import.meta.url).pathname,
+        fileURLToPath(new URL("../src/components/findings-list.tsx", import.meta.url)),
         "utf8"
       );
       assert.ok(!source.includes("SignInEventsV3"));

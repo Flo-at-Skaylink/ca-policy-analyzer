@@ -197,6 +197,20 @@ export interface PolicySignInLogResult {
   windowStart: string;
   /** Hit the overall scan row cap - some recent sign-ins may not be reflected. */
   scanTruncated: boolean;
+  /** Total sign-in rows actually read from Graph across all pages fetched -
+   * surfaced so "0 matches" is distinguishable from "the scan barely ran". */
+  rowsScanned: number;
+  /** Of rowsScanned, how many came back with appliedConditionalAccessPolicies
+   * missing/empty. Per Microsoft's docs Graph silently omits this field (no
+   * error) when the caller can read sign-ins but not CA data - if this equals
+   * rowsScanned, every policy will show 0 matches regardless of what actually
+   * happened in the tenant, and that's a permissions problem, not a bug here. */
+  rowsMissingCaData: number;
+  /** Set when a request failed/errored and ended the scan early (timeout,
+   * permission error, throttling, etc). Undefined when the scan ran to
+   * completion (row cap and time budget are reported via scanTruncated,
+   * not this field - only unexpected failures set it). */
+  scanError?: string;
   /**
    * Empirical evidence that a policy is already being evaluated against the
    * Windows Azure AD Graph ("baseline scopes") audience - keyed by policy ID,
@@ -260,6 +274,13 @@ export interface TenantContext {
   licenses: TenantLicenses;
   /** Authentication strength policies (built-in + custom) - used to detect EAM usage */
   authStrengthPolicies: Map<string, AuthenticationStrengthPolicy>;
+  /**
+   * Tenant-wide External Authentication Method (EAM) configuration state -
+   * used to gate the user-risk-remediation-no-eam-companion exclusion check
+   * so it doesn't fire in tenants with no EAM provider configured. Undefined
+   * for offline exports predating this dataset - treat the same as "unknown".
+   */
+  eamState?: EamTenantState;
   /** Undefined when the scan was skipped - no AuditLog.Read.All, no P1, or an
    * offline export that predates this dataset. */
   unregisteredSignInApps?: UnregisteredSignInAppsResult;
@@ -403,6 +424,80 @@ export async function fetchAuthenticationStrengthPolicies(
   );
 }
 
+/** One configured External Authentication Method provider (Duo, Okta, Ping, etc.). */
+export interface ExternalAuthMethodConfig {
+  id: string;
+  appDisplayName?: string;
+  state: "enabled" | "disabled";
+  /** true when includeTargets contains the "all users" group. */
+  targetsAllUsers: boolean;
+  includeGroupIds: string[];
+}
+
+export interface EamTenantState {
+  /** "enabled" if at least one EAM provider is enabled in the tenant, "none"
+   * if the tenant has zero EAM providers (or all are disabled), "unknown" if
+   * the policy couldn't be read (missing permission/role, or an offline
+   * export - which carries no EAM data at all). "unknown" must never be
+   * treated the same as "none": that would silently suppress a real gap. */
+  state: "enabled" | "none" | "unknown";
+  providers: ExternalAuthMethodConfig[];
+}
+
+/**
+ * GET /policies/authenticationMethodsPolicy (v1.0) - returns
+ * authenticationMethodConfigurations, including entries of type
+ * #microsoft.graph.externalAuthenticationMethodConfiguration for EAM
+ * providers (Duo, Okta Verify, Ping, etc.).
+ * https://learn.microsoft.com/en-us/graph/api/authenticationmethodspolicy-get
+ *
+ * Least-privileged scope is Policy.Read.AuthenticationMethod; Policy.Read.All
+ * (already requested by this app) is documented as a higher-privileged
+ * alternative that also works - no new consent needed. Still requires a
+ * supporting directory role (Global Reader or Authentication Policy
+ * Administrator) beyond the scope, so this can fail even with the right
+ * consent - callers must treat a failure as "unknown", not "none".
+ */
+export async function fetchEamTenantState(client: Client): Promise<EamTenantState> {
+  try {
+    const response = await client
+      .api("/policies/authenticationMethodsPolicy")
+      .version("v1.0")
+      .get();
+    const configs: Array<Record<string, unknown>> =
+      response?.authenticationMethodConfigurations ?? [];
+
+    const providers: ExternalAuthMethodConfig[] = configs
+      .filter(
+        (c) =>
+          c["@odata.type"] === "#microsoft.graph.externalAuthenticationMethodConfiguration"
+      )
+      .map((c) => {
+        const includeTargets = (c.includeTargets as Array<Record<string, unknown>>) ?? [];
+        const targetsAllUsers = includeTargets.some(
+          (t) => t.id === "all_users" || t.targetType === "group" && t.id === "all_users"
+        );
+        const includeGroupIds = includeTargets
+          .filter((t) => t.id !== "all_users")
+          .map((t) => String(t.id))
+          .filter(Boolean);
+        return {
+          id: String(c.id ?? ""),
+          appDisplayName: (c.appDisplayName as string) || undefined,
+          state: c.state === "enabled" ? "enabled" : "disabled",
+          targetsAllUsers,
+          includeGroupIds,
+        };
+      });
+
+    const anyEnabled = providers.some((p) => p.state === "enabled");
+    return { state: anyEnabled ? "enabled" : "none", providers };
+  } catch (error) {
+    console.warn("[fetchEamTenantState] could not read authenticationMethodsPolicy:", error);
+    return { state: "unknown", providers: [] };
+  }
+}
+
 // ─── Unregistered Sign-In Apps ───────────────────────────────────────────────
 
 /** All-zero GUID means "unknown app" in the sign-in logs. */
@@ -460,6 +555,114 @@ export function buildSignInLogQueryUrl(
     filter += ` and signInEventTypes/any(t: t eq '${eventType}')`;
   }
   const request = `auditLogs/signIns?$filter=${filter}&$top=50`;
+  const headers = btoa(
+    JSON.stringify([{ name: "Prefer", value: "include-unknown-enum-members" }])
+  );
+
+  return (
+    "https://developer.microsoft.com/graph/graph-explorer" +
+    `?request=${encodeURIComponent(request)}` +
+    "&method=GET&version=beta" +
+    `&GraphUrl=${encodeURIComponent("https://graph.microsoft.com")}` +
+    `&headers=${encodeURIComponent(headers)}`
+  );
+}
+
+/**
+ * Graph Explorer permalink for "the rest" of a policy's sign-in matches
+ * beyond what the UI shows inline - same time window and `$select` as the
+ * scan itself (so the `appliedConditionalAccessPolicies` column is present),
+ * capped at a larger `$top` for manual review.
+ *
+ * Deliberately does NOT filter server-side by policy id:
+ * `appliedConditionalAccessPolicies` is not documented as a filterable
+ * property on `/auditLogs/signIns` (only `createdDateTime`, `appId`,
+ * `signInEventTypes/any(...)` and a few others are), and a previous attempt
+ * to filter on the sibling `conditionalAccessStatus` property was silently
+ * rejected by Graph, producing an empty-looking scan instead of an error.
+ * Given that history, this link intentionally stays on the known-supported
+ * `createdDateTime` filter and asks the admin to locate this policy by name
+ * within the `appliedConditionalAccessPolicies` column of the results,
+ * rather than risk the same failure mode for a "convenience" filter.
+ */
+export function buildPolicySignInLogQueryUrl(
+  policyDisplayName: string,
+  windowStart: string
+): string {
+  // Left unencoded here, same as buildSignInLogQueryUrl above - the whole
+  // `request` string gets encodeURIComponent'd once below when it's placed
+  // into the outer URL's query string. Encoding it here too would double-
+  // encode (e.g. a literal space becomes %2520 instead of %20).
+  const request =
+    `auditLogs/signIns?$filter=createdDateTime ge ${windowStart}` +
+    `&$select=${POLICY_SIGNIN_SELECT}` +
+    `&$orderby=createdDateTime desc` +
+    `&$top=200`;
+  const headers = btoa(
+    JSON.stringify([{ name: "Prefer", value: "include-unknown-enum-members" }])
+  );
+
+  return (
+    "https://developer.microsoft.com/graph/graph-explorer" +
+    `?request=${encodeURIComponent(request)}` +
+    "&method=GET&version=beta" +
+    `&GraphUrl=${encodeURIComponent("https://graph.microsoft.com")}` +
+    `&headers=${encodeURIComponent(headers)}` +
+    // Not consumed by Graph Explorer itself - harmless, but documents intent
+    // in the URL for anyone inspecting it, and is a no-op if stripped.
+    `&note=${encodeURIComponent(
+      `Find "${policyDisplayName}" in appliedConditionalAccessPolicies`
+    )}`
+  );
+}
+
+/**
+ * Graph Explorer permalink scoped to ONE specific sign-in match - the closest
+ * this app gets to "show me just this failed sign-in". Unlike
+ * buildPolicySignInLogQueryUrl (date-only, because policy attribution isn't
+ * filterable), this filters by `userPrincipalName eq` and a narrow
+ * `createdDateTime` window bracketing the exact match - both are documented
+ * as filterable on `/auditLogs/signIns`:
+ *   https://learn.microsoft.com/en-us/graph/api/resources/signin
+ *     userPrincipalName: "Supports $filter (eq, startsWith)"
+ *     createdDateTime:   "Supports $orderby, $filter (eq, le, and ge)"
+ * This is real, documented filter support - not a repeat of the
+ * appliedConditionalAccessPolicies/conditionalAccessStatus mistakes from
+ * earlier in this project's history. Still can't filter by policy directly,
+ * so the result may include other sign-ins from the same user that day; the
+ * exact match is easy to spot since the window is only +/-2 hours.
+ *
+ * Falls back to `undefined` for matches with no userPrincipalName (e.g. a
+ * workload identity / service principal sign-in) - there's no equally
+ * reliable narrow filter for those today, so callers should fall back to
+ * buildPolicySignInLogQueryUrl in that case rather than get a link that
+ * silently returns nothing useful.
+ */
+export function buildSignInMatchLogQueryUrl(
+  match: Pick<PolicySignInMatch, "userPrincipalName" | "createdDateTime">
+): string | undefined {
+  if (!match.userPrincipalName) return undefined;
+
+  const matchTime = new Date(match.createdDateTime).getTime();
+  if (Number.isNaN(matchTime)) return undefined;
+
+  const isoNoMillis = (ms: number) =>
+    new Date(ms).toISOString().replace(/\.\d{3}Z$/, ".000Z");
+  const WINDOW_MS = 2 * 60 * 60 * 1000; // +/-2h - narrow, but tolerant of clock/paging skew
+  const rangeStart = isoNoMillis(matchTime - WINDOW_MS);
+  const rangeEnd = isoNoMillis(matchTime + WINDOW_MS);
+
+  // userPrincipalName values from Graph are always lowercase per the docs
+  // ("This value is always in lowercase"); escape a literal single quote per
+  // OData string-literal syntax ('' inside the quoted string) just in case.
+  const upn = match.userPrincipalName.toLowerCase().replace(/'/g, "''");
+
+  const request =
+    `auditLogs/signIns?$filter=` +
+    `userPrincipalName eq '${upn}' and createdDateTime ge ${rangeStart} and createdDateTime le ${rangeEnd}` +
+    `&$select=${POLICY_SIGNIN_SELECT}` +
+    `&$orderby=createdDateTime desc` +
+    `&$top=25`;
   const headers = btoa(
     JSON.stringify([{ name: "Prefer", value: "include-unknown-enum-members" }])
   );
@@ -635,10 +838,22 @@ export async function fetchUnregisteredSignInApps(
 /** Cap on total sign-in rows scanned per run - bounds request volume for tenants
  * with heavy sign-in traffic. Surfaced as `scanTruncated`. */
 const POLICY_SIGNIN_SCAN_ROW_CAP = 500;
-/** Larger than the unregistered-apps page size - fewer round trips against an
- * endpoint whose per-row cost (populating appliedConditionalAccessPolicies)
- * dwarfs its per-request latency, so bigger pages are a clear win here. */
-const POLICY_SIGNIN_PAGE_SIZE = 200;
+/**
+ * `appliedConditionalAccessPolicies` is documented-expensive to populate per
+ * row - Graph evaluates every applicable policy against the sign-in to fill
+ * it in. That cost scales with how many CA policies the tenant has, not just
+ * the page size: a tenant with 50+ policies can blow past the per-request
+ * timeout on the very first page even at 100 rows (observed in production -
+ * "Request timed out after 15000ms" on row 1, 0 rows scanned). 100 was only
+ * ever validated against tenants with far fewer policies. Dropped to 50 and
+ * paired with a per-request retry (see fetchWithRetry below) that halves the
+ * page size on a timeout instead of giving up outright, so heavier tenants
+ * degrade to smaller/slower pages rather than reporting zero matches.
+ */
+const POLICY_SIGNIN_PAGE_SIZE = 50;
+/** Floor for the retry-with-smaller-page-size fallback - below this it's not
+ * worth halving again, just let the timeout end the scan. */
+const POLICY_SIGNIN_MIN_PAGE_SIZE = 10;
 /** Cap on matches kept per policy - the UI only needs a representative sample. */
 const POLICY_SIGNIN_MATCHES_PER_POLICY_CAP = 25;
 /**
@@ -646,9 +861,13 @@ const POLICY_SIGNIN_MATCHES_PER_POLICY_CAP = 25;
  * tenant (this endpoint's `appliedConditionalAccessPolicies` select is
  * documented-expensive) can't leave the run stuck on this step indefinitely.
  * Either limit hitting ends the scan early with `scanTruncated: true`.
+ * Both raised alongside the smaller page size above - a tenant with enough
+ * policies to make 50 rows expensive needs more per-request headroom than
+ * 15s, and the retry-on-timeout fallback needs room in the overall budget
+ * to actually get a second attempt in before giving up.
  */
-const POLICY_SIGNIN_SCAN_TIME_BUDGET_MS = 25_000;
-const POLICY_SIGNIN_REQUEST_TIMEOUT_MS = 15_000;
+const POLICY_SIGNIN_SCAN_TIME_BUDGET_MS = 45_000;
+const POLICY_SIGNIN_REQUEST_TIMEOUT_MS = 25_000;
 
 /** Rejects if `promise` hasn't settled within `ms` - bounds a single Graph call. */
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -668,6 +887,71 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
       }
     );
   });
+}
+
+/** True for the specific timeout error `withTimeout` throws (not a real Graph
+ * error/400) - only this case is worth retrying with a smaller page. */
+function isTimeoutError(error: unknown): boolean {
+  return error instanceof Error && /timed out after \d+ms/.test(error.message);
+}
+
+/** Rewrites (or adds) `$top=N` on a request URL - used to retry a page at a
+ * smaller size. Works on both the initial hand-built URL and a Graph
+ * `@odata.nextLink` (which already carries its own `$top` alongside an
+ * opaque `$skiptoken` that must be left untouched). */
+function withPageSize(url: string, pageSize: number): string {
+  if (/([?&])\$top=\d+/.test(url)) {
+    return url.replace(/([?&])\$top=\d+/, `$1$top=${pageSize}`);
+  }
+  return `${url}${url.includes("?") ? "&" : "?"}$top=${pageSize}`;
+}
+
+interface SignInPageResponse {
+  value?: Array<Record<string, unknown>>;
+  "@odata.nextLink"?: string;
+}
+
+/**
+ * Fetches one page of sign-ins, halving `pageSize` and retrying on a timeout
+ * instead of giving up immediately. `appliedConditionalAccessPolicies` cost
+ * scales with how many CA policies a tenant has, so a page size tuned for
+ * most tenants can still be too slow for a heavier one - this lets that case
+ * degrade to smaller/slower pages rather than reporting zero matches.
+ * `urlForPageSize` rebuilds the request URL for a given page size (needed
+ * because a `nextLink` from Graph already has its own `$top` baked in).
+ */
+async function fetchSignInPageWithRetry(
+  client: Client,
+  urlForPageSize: (pageSize: number) => string,
+  pageSize: number
+): Promise<{ response: SignInPageResponse; pageSizeUsed: number }> {
+  let currentPageSize = pageSize;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    try {
+      const request = client
+        .api(urlForPageSize(currentPageSize))
+        .version("beta")
+        .header("Prefer", "include-unknown-enum-members")
+        .get();
+      const response = await withTimeout(request, POLICY_SIGNIN_REQUEST_TIMEOUT_MS);
+      return { response, pageSizeUsed: currentPageSize };
+    } catch (error) {
+      if (isTimeoutError(error) && currentPageSize > POLICY_SIGNIN_MIN_PAGE_SIZE) {
+        const halved = Math.max(
+          POLICY_SIGNIN_MIN_PAGE_SIZE,
+          Math.floor(currentPageSize / 2)
+        );
+        console.warn(
+          `[fetchPolicySignInMatches] page of ${currentPageSize} timed out after ` +
+            `${POLICY_SIGNIN_REQUEST_TIMEOUT_MS}ms - retrying at ${halved} rows`
+        );
+        currentPageSize = halved;
+        continue;
+      }
+      throw error;
+    }
+  }
 }
 
 const POLICY_SIGNIN_SELECT = [
@@ -756,7 +1040,15 @@ export async function fetchPolicySignInMatches(
   const byPolicy = new Map<string, PolicySignInMatches>();
   const baselineAudienceEvidence = new Map<string, string>();
   let scanTruncated = false;
+  let scanError: string | undefined;
   let rowsScanned = 0;
+  // Rows where appliedConditionalAccessPolicies came back missing/empty -
+  // per Microsoft's docs this happens when the caller has AuditLog.Read.All
+  // (can read sign-ins) but not Policy.Read.All/Policy.Read.ConditionalAccess
+  // (can't read CA data), in which case Graph *silently omits* the field
+  // instead of erroring. If this equals rowsScanned, that's the real story
+  // behind an all-zero result, not a logic bug in this scan.
+  let rowsMissingCaData = 0;
   const scanStart = Date.now();
   let nextLink: string | undefined =
     `/auditLogs/signIns?$filter=${encodeURIComponent(
@@ -768,21 +1060,24 @@ export async function fetchPolicySignInMatches(
     rowsScanned < POLICY_SIGNIN_SCAN_ROW_CAP &&
     Date.now() - scanStart < POLICY_SIGNIN_SCAN_TIME_BUDGET_MS
   ) {
-    let response;
+    let response: SignInPageResponse | undefined;
     try {
-      const request = client
-        .api(nextLink)
-        .version("beta")
-        .header("Prefer", "include-unknown-enum-members")
-        .get();
-      response = await withTimeout(request, POLICY_SIGNIN_REQUEST_TIMEOUT_MS);
+      const currentLink = nextLink;
+      const result = await fetchSignInPageWithRetry(
+        client,
+        (pageSize) => withPageSize(currentLink, pageSize),
+        POLICY_SIGNIN_PAGE_SIZE
+      );
+      response = result.response;
     } catch (error) {
-      // A single stalled/slow page or a real error - stop rather than hang
-      // or retry indefinitely; whatever was collected so far is still valid.
-      // Logged (not swallowed) so a bad request (e.g. an unsupported $filter
-      // clause returning 400) is visible in the console instead of silently
-      // producing a scan that looks like "zero matches everywhere".
+      // Either a real error (e.g. an unsupported $filter clause returning
+      // 400) or a timeout that persisted even after retrying at the minimum
+      // page size - stop rather than hang or retry indefinitely; whatever
+      // was collected so far is still valid. Logged (not swallowed) so this
+      // is visible in the console instead of silently producing a scan that
+      // looks like "zero matches everywhere".
       console.warn("[fetchPolicySignInMatches] request failed:", error);
+      scanError = error instanceof Error ? error.message : String(error);
       scanTruncated = true;
       break;
     }
@@ -794,7 +1089,10 @@ export async function fetchPolicySignInMatches(
       const applied = normalizeAppliedPolicies(
         row.appliedConditionalAccessPolicies
       );
-      if (!applied) continue;
+      if (!applied) {
+        rowsMissingCaData++;
+        continue;
+      }
 
       const isBaselineAudience =
         typeof row.resourceDisplayName === "string" &&
@@ -862,7 +1160,36 @@ export async function fetchPolicySignInMatches(
     }
   }
 
-  return { byPolicy, windowStart, scanTruncated, baselineAudienceEvidence };
+  // Always logged (not just on error) so a "why is everything 0" report can
+  // be diagnosed from the browser console without adding instrumentation
+  // after the fact - this step has broken silently more than once.
+  console.info(
+    `[fetchPolicySignInMatches] scanned ${rowsScanned} row(s), ` +
+      `${rowsMissingCaData} missing CA data, ${byPolicy.size} policy(ies) with matches, ` +
+      `truncated=${scanTruncated}` +
+      (scanError ? `, error="${scanError}"` : "")
+  );
+  if (rowsScanned > 0 && rowsMissingCaData === rowsScanned) {
+    console.warn(
+      "[fetchPolicySignInMatches] every scanned sign-in was missing appliedConditionalAccessPolicies. " +
+        "Per Microsoft's docs, Graph omits this field (rather than erroring) when the caller can read " +
+        "sign-in logs (AuditLog.Read.All) but not Conditional Access data (Policy.Read.All / " +
+        "Policy.Read.ConditionalAccess). If sign-ins are showing 0 matches for every policy, check that " +
+        "the signed-in account still holds a supported Entra role (Global Reader, Security Reader, " +
+        "Security Administrator, or Conditional Access Administrator) - this can silently regress if a " +
+        "role assignment is removed or expires, even though the sign-in itself keeps working."
+    );
+  }
+
+  return {
+    byPolicy,
+    windowStart,
+    scanTruncated,
+    rowsScanned,
+    rowsMissingCaData,
+    scanError,
+    baselineAudienceEvidence,
+  };
 }
 
 /**
@@ -1137,8 +1464,25 @@ export async function loadTenantContext(
     // expose this preview endpoint - degrade gracefully to null.
   }
 
+  onProgress?.(RUN_STEPS.eamState);
+  // fetchEamTenantState already catches its own errors and returns
+  // { state: "unknown" } rather than throwing - no try/catch needed here.
+  const eamState = await fetchEamTenantState(client);
+
   // The heaviest step, and the only one needing AuditLog.Read.All. Downstream
   // already treats an absent result as "not scanned".
+  //
+  // Sequential, not concurrent - this WAS made concurrent via Promise.allSettled
+  // as a perf attempt, but every single Graph request from this client calls
+  // acquireTokenSilent through its authProvider (see createGraphClient) - there
+  // is no separate up-front token fetch. Firing both scans' paged requests at
+  // once meant dozens of concurrent silent token acquisitions racing each
+  // other; MSAL can reject overlapping silent calls in that pattern, and a
+  // rejection here is caught by fetchPolicySignInMatches's own try/catch and
+  // treated as "request failed, stop scanning" - which looks identical to
+  // "zero matches found" in the UI. Reverted to sequential to stop that
+  // regression; parallelizing safely would require pre-warming the token
+  // once before either scan starts, which isn't done today.
   let unregisteredSignInApps: UnregisteredSignInAppsResult | undefined;
   let policySignInMatches: PolicySignInLogResult | undefined;
   if (includeSignInLogs) {
@@ -1195,5 +1539,5 @@ export async function loadTenantContext(
     if (domain) tenantDisplayName = domain;
   }
 
-  return { tenantDisplayName, tenantId, policies, namedLocations, servicePrincipals, directoryObjects, licenses, authStrengthPolicies, unregisteredSignInApps, policySignInMatches, conditionalAccessSettings };
+  return { tenantDisplayName, tenantId, policies, namedLocations, servicePrincipals, directoryObjects, licenses, authStrengthPolicies, eamState, unregisteredSignInApps, policySignInMatches, conditionalAccessSettings };
 }
